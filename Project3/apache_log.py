@@ -5,6 +5,8 @@ import os
 from collections import Counter, defaultdict
 from urllib.parse import unquote, urlparse, parse_qs
 from apachelogs import LogParser
+from datetime import datetime
+import matplotlib.pyplot as plt
 
 # --- CONFIGURATION & REGEX (UPDATED) ---
 
@@ -253,8 +255,284 @@ def analyze_log(path_log, path_out_alerts="alerts.jsonl", mode="scan"):
             f.write(json.dumps(a) + "\n")
     print(f"\n[DONE] Saved {len(alerts)} alerts to {path_out_alerts}")
 
+# --- HÀM 3: EVALUATE MODEL (Chấm điểm hiệu năng trên Dataset có nhãn) ---
+def evaluate_model(path_log, ai_engine):
+    print(f"\n[*] Đang chấm điểm hệ thống trên file: {path_log}")
+    
+    # Load model
+    if not ai_engine.load_model():
+        print("[LỖI] Cần train model trước khi evaluate!")
+        return
+
+    parser = LogParser(LOG_FORMAT)
+    
+    # Các biến đếm cho Ma trận nhầm lẫn (Confusion Matrix)
+    TP = 0  # Attack thật -> Bắt được (Tốt)
+    TN = 0  # Log sạch -> Bỏ qua (Tốt)
+    FP = 0  # Log sạch -> Báo nhầm là Attack (Báo động giả - Xấu)
+    FN = 0  # Attack thật -> Bỏ sót (Nguy hiểm - Xấu)
+
+    total_lines = 0
+    
+    with open(path_log, "r", encoding="utf-8", errors="replace") as f:
+        for line in f:
+            total_lines += 1
+            if total_lines % 500 == 0: print(f"    Processing line {total_lines}...", end="\r")
+
+            try:
+                entry = parser.parse(line)
+            except: continue
+
+            # --- 1. XÁC ĐỊNH NHÃN THỰC TẾ (GROUND TRUTH) ---
+            # Dựa vào User-Agent đặc biệt ta đã đánh dấu
+            ua = entry.headers_in.get("User-Agent", "")
+            IS_ACTUAL_ATTACK = "(Simulated-Attack)" in ua
+            
+            # --- 2. HỆ THỐNG DỰ ĐOÁN (PREDICTION) ---
+            
+            # A. Tiền xử lý (Giống hệt logic cũ)
+            req_line_str = entry.request_line if entry.request_line else ""
+            parts = req_line_str.split()
+            if len(parts) >= 3:
+                method = parts[0]
+                raw_url = " ".join(parts[1:-1])
+            elif len(parts) == 2:
+                method = parts[0]
+                raw_url = parts[1]
+            else:
+                method, raw_url = "", ""
+                
+            decoded_url = unquote(raw_url)
+            try:
+                parsed = urlparse(decoded_url)
+                path = parsed.path
+                query = parsed.query
+            except: path, query = decoded_url, ""
+            
+            params = parse_qs(query)
+            payload_to_check = f"{path} {query}"
+
+            # B. Chạy Regex
+            regex_hit = False
+            if check_sqli(payload_to_check): regex_hit = True
+            elif check_xss(payload_to_check): regex_hit = True
+            elif check_lfi(payload_to_check): regex_hit = True
+            elif check_cmd_injection(payload_to_check): regex_hit = True
+            elif check_rfi(params): regex_hit = True
+            elif check_sensitive_files(path): regex_hit = True
+        
+
+            # C. Chạy AI
+            ai_hit = ai_engine.predict(path, query, method, entry.final_status)
+            
+            # Whitelist cho AI
+            if ai_hit:
+                if any(x in path for x in ["favicon.ico", "robots.txt", ".css", ".js", ".png", ".jpg"]): ai_hit = False
+                if str(entry.final_status) == "408": ai_hit = False
+                if "login.php" in path and method == "POST": ai_hit = False
+                if path == "/" and method == "GET": ai_hit = False
+
+            # D. Kết luận của hệ thống
+            # Nếu Regex bắt được HOẶC AI bắt được => SYSTEM DETECTED
+            SYSTEM_DETECTED = regex_hit or ai_hit
+
+            # --- 3. SO SÁNH & CẬP NHẬT CHỈ SỐ ---
+            if IS_ACTUAL_ATTACK and SYSTEM_DETECTED:
+                TP += 1
+            elif not IS_ACTUAL_ATTACK and not SYSTEM_DETECTED:
+                TN += 1
+            elif not IS_ACTUAL_ATTACK and SYSTEM_DETECTED:
+                FP += 1 # Báo nhầm
+            elif IS_ACTUAL_ATTACK and not SYSTEM_DETECTED:
+                FN += 1 # Bỏ sót
+
+    # --- 4. BÁO CÁO KẾT QUẢ ---
+    print("\n" + "="*50)
+    print("   KẾT QUẢ ĐÁNH GIÁ HIỆU NĂNG (PERFORMANCE REPORT)")
+    print("="*50)
+    print(f"Tổng số dòng log: {total_lines}")
+    print(f"Thực tế Tấn công: {TP + FN}")
+    print(f"Thực tế Sạch:     {TN + FP}")
+    print("-" * 30)
+    
+    print(f"✅ True Positives (Bắt đúng tấn công): {TP}")
+    print(f"❌ False Negatives (Bỏ sót tấn công):  {FN}")
+    print(f"🛡️  True Negatives (Bỏ qua log sạch):   {TN}")
+    print(f"⚠️  False Positives (Báo nhầm sạch):    {FP}")
+    print("-" * 30)
+
+    # Tính toán chỉ số
+    try:
+        accuracy = (TP + TN) / total_lines * 100
+        precision = TP / (TP + FP) * 100 if (TP + FP) > 0 else 0
+        recall = TP / (TP + FN) * 100 if (TP + FN) > 0 else 0 
+        f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        
+        print(f"📊 ĐỘ CHÍNH XÁC (ACCURACY):  {accuracy:.2f}%")
+        print(f"🎯 PRECISION (Độ tin cậy):   {precision:.2f}%")
+        print(f"🔍 RECALL (Tỷ lệ phát hiện): {recall:.2f}%")
+        print(f"⭐ F1-SCORE:                 {f1_score:.2f}")
+    except:
+        print("Lỗi tính toán (chia cho 0). Kiểm tra lại dữ liệu.")
+    print("="*50)
+
+        # --- VISUALIZATION FOR REPORT ---
+    metrics = {
+        "Accuracy": accuracy,
+        "Precision": precision,
+        "Recall": recall,
+        "F1-Score": f1_score
+    }
+
+    names = list(metrics.keys())
+    values = list(metrics.values())
+
+    plt.figure(figsize=(8, 5))
+    plt.bar(names, values)
+    plt.ylim(0, 100)
+    plt.title("IDS Performance Evaluation")
+    plt.ylabel("Percentage (%)")
+    plt.xlabel("Metric")
+
+    for i, v in enumerate(values):
+        plt.text(i, v + 1, f"{v:.2f}%", ha='center', fontsize=10)
+
+    plt.tight_layout()
+    plt.show()
+
+
+def monitor_realtime(ai_engine):
+    RED = "\033[91m"
+    GREEN = "\033[92m"
+    YELLOW = "\033[93m"
+    CYAN = "\033[96m"
+    RESET = "\033[0m"
+    BOLD = "\033[1m"
+
+    print(f"{CYAN}" + "="*70)
+    print(f" 🛡️  REAL-TIME WEB INTRUSION DETECTION SYSTEM (IDS) ")
+    print(f" [AI MODEL]: {'LOADED' if ai_engine.model else 'NOT LOADED'}")
+    print(f" [MODE]:     REAL-TIME MONITORING (stdin)")
+    print("="*70 + f"{RESET}\n")
+
+    parser = LogParser(LOG_FORMAT)
+
+    try:
+        for line in sys.stdin:
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                entry = parser.parse(line)
+            except:
+                continue
+
+            client_ip = entry.remote_host
+            status = entry.final_status
+
+            # --- Parse request line ---
+            req_line_str = entry.request_line if entry.request_line else ""
+            parts = req_line_str.split()
+            if len(parts) >= 3:
+                method = parts[0]
+                raw_url = " ".join(parts[1:-1])
+            elif len(parts) == 2:
+                method = parts[0]
+                raw_url = parts[1]
+            else:
+                method, raw_url = "", ""
+
+            ua = entry.headers_in.get("User-Agent", "") if entry.headers_in else ""
+
+            decoded_url = unquote(raw_url)
+            try:
+                parsed = urlparse(decoded_url)
+                path = parsed.path
+                query = parsed.query
+            except:
+                path, query = decoded_url, ""
+
+            params = parse_qs(query)
+            payload = f"{path} {query}"
+
+            matches = []
+
+            # --- REGEX LAYER ---
+            if res := check_sqli(payload): matches.append(res)
+            if res := check_xss(payload): matches.append(res)
+            if res := check_lfi(payload): matches.append(res)
+            if res := check_cmd_injection(payload): matches.append(res)
+            if res := check_rfi(params): matches.append(res)
+            if res := check_sensitive_files(path): matches.append(res)
+            if res := check_scanner_ua(ua): matches.append(res)
+
+            # --- AI LAYER ---
+            ai_hit = ai_engine.predict(path, query, method, status)
+
+            if ai_hit:
+                # Whitelist giống scan / evaluate
+                if not (
+                    any(x in path for x in ["favicon.ico", "robots.txt", ".css", ".js", ".png", ".jpg"]) or
+                    str(status) == "408" or
+                    (path == "/" and method == "GET")
+                ):
+                    matches.append({
+                        "id": "AI_ANOMALY",
+                        "desc": "Abnormal request structure detected by Machine Learning"
+                    })
+
+            # --- OUTPUT ---
+            if matches:
+                timestamp = datetime.now().strftime("%H:%M:%S")
+                print(f"{RED}[ALERT] {timestamp} | IP: {client_ip}{RESET}")
+                shown = set()
+                for m in matches:
+                    if m["id"] not in shown:
+                        icon = "🤖" if m["id"] == "AI_ANOMALY" else "🔥"
+                        print(f"   {icon} {BOLD}{m['id']}{RESET}: {m['desc']}")
+                        shown.add(m["id"])
+                print(f"   Payload: {YELLOW}{method} {raw_url}{RESET}")
+                print("-"*70, flush=True)
+
+    except KeyboardInterrupt:
+        print(f"\n{GREEN}[STOP] Monitoring stopped by user.{RESET}")
+
+
+
 if __name__ == "__main__":
-    if len(sys.argv) < 3:
-        print("Usage: python apache_log.py [train|scan] [logfile]")
+    from ai_detector import LogAnomalyDetector
+
+    if len(sys.argv) < 2:
+        print("Usage: python apache_log.py [train|scan|monitor|evaluate] [logfile]")
         sys.exit(1)
-    analyze_log(sys.argv[2], mode=sys.argv[1])
+
+    mode = sys.argv[1]
+    ai_engine = LogAnomalyDetector()
+
+    if mode == "train":
+        if len(sys.argv) < 3:
+            print("Missing log file for training.")
+            sys.exit(1)
+        analyze_log(sys.argv[2], mode="train")
+
+    elif mode == "scan":
+         if len(sys.argv) < 3:
+            print("Missing log file for scanning.")
+            sys.exit(1)
+         analyze_log(sys.argv[2], mode="scan")
+
+    elif mode == "monitor":
+        if not ai_engine.load_model():
+            print("⚠️  AI model not found. Please run train first.")
+            sys.exit(1)
+        monitor_realtime(ai_engine)
+        
+    elif mode == "evaluate":
+        if len(sys.argv) < 3:
+            print("Missing log file for evaluation.")
+            sys.exit(1)
+        if not ai_engine.load_model():
+            print("⚠️  AI model not found. Please run train first.")
+            sys.exit(1)
+        evaluate_model(sys.argv[2], ai_engine)

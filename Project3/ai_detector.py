@@ -9,8 +9,7 @@ class LogAnomalyDetector:
     def __init__(self, model_path="ad_model.pkl"):
         self.model_path = model_path
         self.model = None
-        # Contamination: Tỷ lệ nhiễu/tấn công ước lượng trong dữ liệu (30%)
-        self.clf = IsolationForest(contamination='auto', random_state=42, n_jobs=-1, n_estimators=200)
+        self.clf = IsolationForest(contamination=0.08, random_state=42, n_jobs=-1, n_estimators=200)
 
     def extract_features(self, path, query, method, status):
         full_url = str(path) + str(query)
@@ -21,32 +20,30 @@ class LogAnomalyDetector:
         if len_url == 0: len_url = 1
         
         # 2. Safe Chars (Giữ nguyên)
-        safe_chars = sum(decoded_url.count(c) for c in ["/", "?", "&", "=", ".", "_", "-", ":"])
+        # safe_chars = sum(decoded_url.count(c) for c in ["/", "?", "&", "=", ".", "_", "-", ":"])
         
         # 3. Risk Chars (PHÓNG ĐẠI X50 LẦN)
-        # Chỉ cần xuất hiện 1 dấu nguy hiểm, giá trị feature sẽ vọt lên 50
         raw_risk_count = sum(decoded_url.count(c) for c in [";", "|", "$", "`", "(", ")", "<", ">", "'", '"', "{", "}", "\\"])
-        risk_score = raw_risk_count * 150  # <--- TRỌNG SỐ CAO
+        # risk_score = raw_risk_count * 150  
         
         # 4. Số khoảng trắng (PHÓNG ĐẠI X20 LẦN)
-        # Vì URL sạch chuẩn mực không nên có dấu cách
-        raw_spaces = decoded_url.count(' ')
-        spaces_score = raw_spaces * 100    # <--- TRỌNG SỐ CAO
+        # raw_spaces = decoded_url.count(' ')
+        # spaces_score = raw_spaces * 100    
         
         # 5. Các chỉ số khác
         path_depth = path.count('/')
         is_post = 1 if method == "POST" else 0
-        is_error = 1 if str(status).startswith(('4', '5')) else 0
+        # is_error = 1 if str(status).startswith(('4', '5')) else 0
         
         # 6. Tỷ lệ nguy hiểm (Cũng sẽ tự động tăng theo risk_score thực tế nếu muốn, nhưng ở đây dùng count gốc chia len)
         risk_ratio = raw_risk_count / len_url
 
-        num_commas = decoded_url.count(',')
-        num_upper = sum(1 for c in decoded_url if c.isupper())
-        upper_ratio = num_upper / len(decoded_url) if len(decoded_url) > 0 else 0
-        is_percent_encoded = 1 if '%' in full_url else 0  # Bắt %20 etc.
+        # num_commas = decoded_url.count(',')
+        # num_upper = sum(1 for c in decoded_url if c.isupper())
+        # upper_ratio = num_upper / len(decoded_url) if len(decoded_url) > 0 else 0
+        # is_percent_encoded = 1 if '%' in full_url else 0  
     
-        return [len_url, safe_chars, risk_score, spaces_score, path_depth, is_post, is_error, risk_ratio, num_commas, num_upper * 10, upper_ratio, is_percent_encoded*150]  # Thêm 4 features, amplify num_upper x10
+        return [len_url, raw_risk_count, path_depth, is_post, risk_ratio]  
 
 
     def train(self, log_data):

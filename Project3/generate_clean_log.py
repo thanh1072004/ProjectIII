@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 # Cấu hình
 OUTPUT_FILE = "training_clean.log"
-NUM_ENTRIES = 3000  # Tạo 3000 dòng log sạch
+NUM_ENTRIES = 10000 
 
 # Danh sách URL bình thường (Học thói quen người dùng tốt)
 NORMAL_PATHS = [
