@@ -457,41 +457,32 @@ def monitor_realtime(ai_engine):
             payload = f"{path} {query}"
 
             matches = []
+            if res := check_sqli(payload): matches.append(res["id"])
+            if res := check_xss(payload): matches.append(res["id"])
+            if res := check_lfi(payload): matches.append(res["id"])
+            if res := check_cmd_injection(payload): matches.append(res["id"])
+            if res := check_rfi(params): matches.append(res["id"])
+            if res := check_sensitive_files(path): matches.append(res["id"])
+            if res := check_scanner_ua(ua): matches.append(res["id"])
 
-            # --- REGEX LAYER ---
-            if res := check_sqli(payload): matches.append(res)
-            if res := check_xss(payload): matches.append(res)
-            if res := check_lfi(payload): matches.append(res)
-            if res := check_cmd_injection(payload): matches.append(res)
-            if res := check_rfi(params): matches.append(res)
-            if res := check_sensitive_files(path): matches.append(res)
-            if res := check_scanner_ua(ua): matches.append(res)
-
-            # --- AI LAYER ---
             ai_hit = ai_engine.predict(path, query, method, status)
 
             if ai_hit:
-                # Whitelist giống scan / evaluate
                 if not (
                     any(x in path for x in ["favicon.ico", "robots.txt", ".css", ".js", ".png", ".jpg"]) or
                     str(status) == "408" or
                     (path == "/" and method == "GET")
                 ):
-                    matches.append({
-                        "id": "AI_ANOMALY",
-                        "desc": "Abnormal request structure detected by Machine Learning"
-                    })
+                    matches.append("ANOMALY")
 
-            # --- OUTPUT ---
             if matches:
                 timestamp = datetime.now().strftime("%H:%M:%S")
+
                 print(f"{RED}[ALERT] {timestamp} | IP: {client_ip}{RESET}")
-                shown = set()
-                for m in matches:
-                    if m["id"] not in shown:
-                        icon = "🤖" if m["id"] == "AI_ANOMALY" else "🔥"
-                        print(f"   {icon} {BOLD}{m['id']}{RESET}: {m['desc']}")
-                        shown.add(m["id"])
+
+                for m in sorted(set(matches)):
+                    print(f"   {BOLD}{m}{RESET}")
+
                 print(f"   Payload: {YELLOW}{method} {raw_url}{RESET}")
                 print("-"*70, flush=True)
 
