@@ -15,33 +15,22 @@ class LogAnomalyDetector:
         full_url = str(path) + str(query)
         decoded_url = unquote(full_url)
         
-        # 1. Độ dài (Giữ nguyên)
+        # 1. Length of URL 
         len_url = len(full_url)
         if len_url == 0: len_url = 1
         
-        # 2. Safe Chars (Giữ nguyên)
-        # safe_chars = sum(decoded_url.count(c) for c in ["/", "?", "&", "=", ".", "_", "-", ":"])
+        # 2. Risk Chars 
+        raw_risk_count = sum(decoded_url.count(c) for c in [";", "|", "$", "`", "(", ")", "<", ">", "'", '"', "{", "}", "\\"]) 
         
-        # 3. Risk Chars (PHÓNG ĐẠI X50 LẦN)
-        raw_risk_count = sum(decoded_url.count(c) for c in [";", "|", "$", "`", "(", ")", "<", ">", "'", '"', "{", "}", "\\"])
-        # risk_score = raw_risk_count * 150  
-        
-        # 4. Số khoảng trắng (PHÓNG ĐẠI X20 LẦN)
-        # raw_spaces = decoded_url.count(' ')
-        # spaces_score = raw_spaces * 100    
-        
-        # 5. Các chỉ số khác
+        # 3. Depth of path
         path_depth = path.count('/')
+
+        # 4. Method POST
         is_post = 1 if method == "POST" else 0
-        # is_error = 1 if str(status).startswith(('4', '5')) else 0
-        
-        # 6. Tỷ lệ nguy hiểm (Cũng sẽ tự động tăng theo risk_score thực tế nếu muốn, nhưng ở đây dùng count gốc chia len)
+
+        # 5. Risk Ratio 
         risk_ratio = raw_risk_count / len_url
 
-        # num_commas = decoded_url.count(',')
-        # num_upper = sum(1 for c in decoded_url if c.isupper())
-        # upper_ratio = num_upper / len(decoded_url) if len(decoded_url) > 0 else 0
-        # is_percent_encoded = 1 if '%' in full_url else 0  
     
         return [len_url, raw_risk_count, path_depth, is_post, risk_ratio]  
 
@@ -81,11 +70,9 @@ class LogAnomalyDetector:
         Dự đoán: Trả về True nếu là Bất thường (Anomaly), False nếu Bình thường
         """
         if not self.model:
-            return False # Chưa có model thì coi như bình thường
+            return False 
             
         features = self.extract_features(path, query, method, status)
-        # Reshape(1, -1) vì predict dự đoán cho 1 mẫu
         pred = self.model.predict([features])
         
-        # Isolation Forest: -1 là bất thường, 1 là bình thường
         return pred[0] == -1

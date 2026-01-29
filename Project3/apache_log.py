@@ -8,9 +8,9 @@ from apachelogs import LogParser
 from datetime import datetime
 import matplotlib.pyplot as plt
 
-# --- CONFIGURATION & REGEX (UPDATED) ---
+# --- CONFIGURATION & REGEX ---
 
-# SQLi: Bổ sung bắt '1'='1 và union all
+# SQLi
 SQLI_RE = re.compile(r'(?i)(\bunion\s+(all\s+)?select\b|\bselect\s+.*\bfrom\b|\binsert\s+into\b|\bupdate\s+.*\bset\b|\bdelete\s+from\b|\bdrop\s+(table|database)\b|\balter\s+table\b|\btruncate\s+table\b|[\'"]\s*(or|and)\s+[\'"]?\d+[\'"]?\s*=\s*[\'"]?\d+|\b(or|and)\s+\d+\s*=\s*\d+|--|\/\*)')
 # XSS: Giữ nguyên
 XSS_RE = re.compile(r'(?i)(<script\b|javascript:|onerror\s*=|onload\s*=|eval\(|<img\s+src|alert\()')
@@ -20,13 +20,10 @@ LFI_RE = re.compile(r'(?i)(\.\./|\.\.\\|/etc/passwd|/proc/self|C:\\Windows|win\.
 
 # Command Injection
 CMD_INJ_RE = re.compile(r'(?i)('
-                        # Nhóm 1: Các lệnh ngắn/phổ thông -> Bắt buộc phải có dấu phân cách (; | && $)
                         r'(;|\||&&|\$|\>)\s*(rm|ls|cat|whoami|ping|tail|head)\b'
                         r'|'
-                        # Nhóm 2: Các lệnh nguy hiểm đặc thù -> Bắt luôn nếu thấy (cho phép đứng đầu hoặc sau dấu cách/cộng)
                         r'\b(wget|curl|netcat|nc|bash|sh|python|perl)\b'
                         r'|'
-                        # Nhóm 3: Dấu backtick
                         r'`.*`'
                         r')')
 
@@ -456,32 +453,46 @@ def monitor_realtime(ai_engine):
             params = parse_qs(query)
             payload = f"{path} {query}"
 
-            matches = []
-            if res := check_sqli(payload): matches.append(res["id"])
-            if res := check_xss(payload): matches.append(res["id"])
-            if res := check_lfi(payload): matches.append(res["id"])
-            if res := check_cmd_injection(payload): matches.append(res["id"])
-            if res := check_rfi(params): matches.append(res["id"])
-            if res := check_sensitive_files(path): matches.append(res["id"])
-            if res := check_scanner_ua(ua): matches.append(res["id"])
+            rule_hits = []
+
+            if res := check_sqli(payload): rule_hits.append(res["id"])
+            if res := check_xss(payload): rule_hits.append(res["id"])
+            if res := check_lfi(payload): rule_hits.append(res["id"])
+            if res := check_cmd_injection(payload): rule_hits.append(res["id"])
+            if res := check_rfi(params): rule_hits.append(res["id"])
+            if res := check_sensitive_files(path): rule_hits.append(res["id"])
+            if res := check_scanner_ua(ua): rule_hits.append(res["id"])
 
             ai_hit = ai_engine.predict(path, query, method, status)
 
+            # whitelist for AI only
             if ai_hit:
                 if not (
                     any(x in path for x in ["favicon.ico", "robots.txt", ".css", ".js", ".png", ".jpg"]) or
                     str(status) == "408" or
                     (path == "/" and method == "GET")
                 ):
-                    matches.append("ANOMALY")
+                    ai_flag = True
+                else:
+                    ai_flag = False
+            else:
+                ai_flag = False
 
-            if matches:
+
+            # -------- FINAL FUSION DECISION --------
+
+            attack_detected = bool(rule_hits) or ai_flag
+
+            if attack_detected:
                 timestamp = datetime.now().strftime("%H:%M:%S")
 
                 print(f"{RED}[ALERT] {timestamp} | IP: {client_ip}{RESET}")
 
-                for m in sorted(set(matches)):
-                    print(f"   {BOLD}{m}{RESET}")
+                if rule_hits:
+                    for rid in sorted(set(rule_hits)):
+                        print(f"   {BOLD}{rid}{RESET}")
+                else:
+                    print(f"   {BOLD}SUSPICIOUS_REQUEST{RESET}")
 
                 print(f"   Payload: {YELLOW}{method} {raw_url}{RESET}")
                 print("-"*70, flush=True)
