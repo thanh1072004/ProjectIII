@@ -1,0 +1,5 @@
+Project3/datasets/*.log
+Project3/datasets/*.csv
+Project3/generate_logs/*.log
+Project3/generate_logs/*.csv
+Project3/*.pkl

