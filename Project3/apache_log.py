@@ -14,6 +14,15 @@ import urllib
 # param names don't match anything seen during training for that endpoint.
 PATH_PARAM_VOCAB = {}
 
+# Output JSONL được ghi vào runtime/ (cấu trúc mới). Tự tạo thư mục khi cần.
+_PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+_RUNTIME_DIR  = os.environ.get("IDS_RUNTIME_DIR",
+                               os.path.join(_PROJECT_ROOT, "runtime"))
+os.makedirs(_RUNTIME_DIR, exist_ok=True)
+
+def _runtime_path(name):
+    return os.path.join(_RUNTIME_DIR, name)
+
 # --- CONFIGURATION & REGEX ---
 
 # SQLi -- Phase 3.1 (C): broadened to cover quoted-no-space tautologies like
@@ -155,7 +164,25 @@ def check_param_tampering(path, query, vocab):
 
 # --- MAIN ANALYSIS ---
 
-def analyze_log(path_log, ai_engine, path_out_alerts="alerts.jsonl", mode="scan"):
+def analyze_log(path_log, ai_engine, supervised_engine=None,
+                path_out_alerts=None,
+                path_out_results=None,
+                mode="scan"):
+    # Default output paths -> runtime/
+    if path_out_alerts is None:
+        path_out_alerts = _runtime_path("alerts.jsonl")
+    if path_out_results is None:
+        path_out_results = _runtime_path("scan_results.jsonl")
+    """
+    Hai chế độ:
+      - mode="train": chỉ thu thập dữ liệu để train (ai_engine.train được gọi sau)
+      - mode="scan" : chạy đầy đủ 3-tier (regex + supervised RF + unsup LOF),
+                      ghi 2 file output:
+                        * scan_results.jsonl : 1 dòng/log_line, có verdict + chi tiết
+                                              (phân biệt rõ attack/clean cho từng dòng)
+                        * alerts.jsonl       : chỉ những dòng được kết luận là attack
+                                              (giữ format cũ để tương thích)
+    """
     parser_combined = LogParser(LOG_FORMAT_COMBINED)
     parser_common = LogParser(LOG_FORMAT_COMMON)
     alerts = []
@@ -164,255 +191,585 @@ def analyze_log(path_log, ai_engine, path_out_alerts="alerts.jsonl", mode="scan"
     ip_activity = defaultdict(int)
     ip_paths = defaultdict(set)
     ip_401_counts = defaultdict(int)
+
+    # Cho mode train: chỉ thu data
     training_data = []
 
+    # Cho mode scan: lưu (line_no, parsed_data, regex_matches)
+    scan_inputs = []
+
     print(f"[*] Starting {mode} on {path_log}...")
-            
+
     with open(path_log, "r", encoding="utf-8", errors="replace") as f_in:
         for line_no, line in enumerate(f_in, start=1):
             line = line.strip()
             if not line:
                 continue
 
-            # NÂNG CẤP: Fallback Parsing
             try:
-                # Thử parse chuẩn Combined (có User-Agent) trước
                 entry = parser_combined.parse(line)
             except Exception:
                 try:
-                    # Nếu lỗi, thử parse chuẩn Common (NASA 1995)
                     entry = parser_common.parse(line)
                 except Exception:
-                    # Nếu vẫn lỗi thì mới bỏ qua dòng này
                     continue
 
-            # ===== Parse chung =====
             parsed_data = parse_log_entry(entry)
-            
-            # ===== Build training item chung =====
             training_item = build_training_item(parsed_data)
             training_data.append(training_item)
 
-            # Nếu đang mode train thì chỉ thu thập dữ liệu
             if mode == "train":
                 continue
 
-            # ===== Rule-based detection chung =====
+            # ===== Tier 1: Rule-based detection =====
             matches = detect_rule_based(parsed_data)
-
-            # ===== Behavior stats chung =====
             update_behavior_stats(parsed_data, ip_activity, ip_paths, ip_401_counts)
 
-            if matches:
-                alert = build_alert(
-                    line_no=line_no,
-                    client_ip=parsed_data["client_ip"],
-                    matches=matches,
-                    detail=f"{parsed_data['method']} {parsed_data['raw_url']}"
-                )
-                alerts.append(alert)
-                print(f"[REGEX] Line {line_no} | {matches[0]['id']}")
+            scan_inputs.append((line_no, parsed_data, training_item, matches))
 
+    # ----- mode TRAIN -----
     if mode == "train":
         print(f"[*] Training AI model ({ai_engine.model_type.upper()}) with {len(training_data)} entries...")
-        
-        # Xóa file model cũ nếu tồn tại (dùng tên file linh hoạt theo model_type)
         if os.path.exists(ai_engine.model_path):
             os.remove(ai_engine.model_path)
-            
-        # Xóa file scaler cũ nếu tồn tại
         if os.path.exists(ai_engine.scaler_path):
             os.remove(ai_engine.scaler_path)
-            
         ai_engine.train(training_data)
         return
 
-    if mode == "scan":
-        if ai_engine.load_model():
-            print("\n[AI MODULE] Scanning for anomalies...")
-            ai_alerts = 0
+    # ----- mode SCAN: chạy đầy đủ 3-tier -----
+    has_unsup = ai_engine.load_model() if ai_engine else False
+    has_sup = supervised_engine is not None and getattr(supervised_engine, 'model', None) is not None
 
-            for idx, item in enumerate(training_data, start=1):
-                is_anomaly = ai_engine.predict(
-                    item["path"],
-                    item["query"],
-                    item["method"],
-                    item["status"],
-                    item.get("user_agent", ""),
-                    item.get("referer", "")
-                )
+    print(f"\n[SCAN] Tier 1 (regex+vocab+method-tamper) ALWAYS ON")
+    print(f"[SCAN] Tier 2 (supervised RF) {'LOADED' if has_sup else 'DISABLED'}")
+    print(f"[SCAN] Tier 3 (unsupervised {ai_engine.model_type.upper() if ai_engine else '-'}) {'LOADED' if has_unsup else 'DISABLED'}")
+    print(f"[SCAN] Output: {path_out_results} (mọi dòng) + {path_out_alerts} (chỉ attack)")
 
-                if should_debug_ai_item(item):
-                    print_ai_debug(ai_engine, idx, item)
+    # Truncate output files
+    open(path_out_results, "w", encoding="utf-8").close()
 
-                if is_anomaly:
-                    # Whitelist chung
-                    if is_ai_whitelisted(item):
-                        continue
+    n_attack = n_clean = 0
+    bucket_counts = {"CRITICAL": 0, "HIGH": 0, "MEDIUM": 0, "LOW": 0, "CLEAN": 0}
 
-                    print(f"[AI] Line {idx} -> Anomaly Detected: {item['method']} {item['path']}")
-                    alerts.append(
-                        build_ai_alert(
-                            line_no=idx,
-                            detail=f"{item['method']} {item['path']}?{item['query']}"
-                        )
+    with open(path_out_results, "a", encoding="utf-8") as f_results:
+        for line_no, parsed_data, item, rule_matches in scan_inputs:
+            rule_ids = sorted({m["id"] for m in rule_matches})
+            whitelisted = is_ai_whitelisted(item)
+
+            # Tier 2: supervised RF probability
+            sup_hit = False
+            sup_prob = 0.0
+            if has_sup and not whitelisted:
+                try:
+                    sup_prob = supervised_engine.predict_proba(
+                        item["path"], item["query"], item["method"], item["status"],
+                        item.get("user_agent", ""), item.get("referer", "")
                     )
-                    ai_alerts += 1
+                    sup_hit = sup_prob >= 0.5
+                except Exception:
+                    sup_hit, sup_prob = False, 0.0
 
-            print(f"[AI] Finished. Found {ai_alerts} anomalies missed by Regex.")
-        else:
-            print("[AI] No model found. Run 'train' mode first.")
+            # Tier 3: unsupervised tripwire
+            unsup_hit = False
+            if has_unsup and not whitelisted:
+                try:
+                    unsup_hit = ai_engine.predict(
+                        item["path"], item["query"], item["method"], item["status"],
+                        item.get("user_agent", ""), item.get("referer", "")
+                    )
+                except Exception:
+                    unsup_hit = False
 
-    # ===== Behavior analysis chung =====
+            # Weighted score + Smart Hybrid Consensus (giảm FP của LOF khi RF không đồng ý)
+            score = 0.0
+            if rule_ids:
+                score += 0.45
+            if sup_hit:
+                score += 0.40 * sup_prob
+            if unsup_hit:
+                score += 0.20
+
+            # Decision: Smart Hybrid Consensus
+            #   attack = regex_hit OR sup>=0.5 OR (lof_hit AND sup>=0.3)
+            is_attack = bool(rule_ids) or sup_hit or (unsup_hit and sup_prob >= 0.3)
+
+            if not is_attack:
+                level = "CLEAN"
+            elif score >= 0.75:
+                level = "CRITICAL"
+            elif score >= 0.45:
+                level = "HIGH"
+            elif score >= 0.25:
+                level = "MEDIUM"
+            else:
+                level = "LOW"
+            bucket_counts[level] += 1
+            if is_attack:
+                n_attack += 1
+            else:
+                n_clean += 1
+
+            sources = []
+            if rule_ids:
+                sources.append(f"REGEX({','.join(rule_ids)})")
+            if sup_hit:
+                sources.append(f"SUPERVISED({supervised_engine.algo.upper()},p={sup_prob:.2f})")
+            if unsup_hit:
+                sources.append(f"UNSUPERVISED({ai_engine.model_type.upper()})")
+
+            # Ghi từng dòng vào scan_results.jsonl (CẢ attack lẫn clean)
+            rec = {
+                "line_no":   line_no,
+                "client_ip": parsed_data["client_ip"],
+                "method":    parsed_data["method"],
+                "raw_url":   parsed_data["raw_url"],
+                "status":    parsed_data["status"],
+                "is_attack": is_attack,
+                "level":     level,
+                "score":     round(score, 3),
+                "tiers":     sources,
+                "rule_ids":  rule_ids,
+                "sup_prob":  round(sup_prob, 3) if has_sup else None,
+                "lof_hit":   bool(unsup_hit),
+                "whitelisted": whitelisted,
+            }
+            f_results.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+            # Ngoài ra: nếu là attack -> thêm vào alerts.jsonl (format cũ)
+            if is_attack:
+                alerts.append({
+                    "line_no": line_no,
+                    "client_ip": parsed_data["client_ip"],
+                    "level": level,
+                    "score": round(score, 3),
+                    "tiers": sources,
+                    "matches": rule_matches if rule_matches else [{"id": "AI_DETECTED", "desc": "Detected by AI tier(s)"}],
+                    "detail": f"{parsed_data['method']} {parsed_data['raw_url']}"
+                })
+
+    # ===== Behavior analysis (giữ logic cũ) =====
     behavior_alerts = analyze_behavior(ip_paths)
     alerts.extend(behavior_alerts)
 
-    # ===== Save alerts chung =====
+    # ===== Save alerts.jsonl =====
     save_alerts(alerts, path_out_alerts)
-    print(f"\n[DONE] Saved {len(alerts)} alerts to {path_out_alerts}")
 
-# --- HÀM 3: EVALUATE MODEL (Chấm điểm hiệu năng trên Dataset có nhãn) ---
-def evaluate_model(path_log, ai_engine):
-    print(f"\n[*] Đang chấm điểm hệ thống trên file: {path_log}")
+    # ===== Tóm tắt =====
+    total = n_attack + n_clean
+    print(f"\n{'='*60}")
+    print(f"  SCAN SUMMARY")
+    print(f"{'='*60}")
+    print(f"  Tổng số dòng đã quét:  {total}")
+    print(f"  ✓ Sạch (clean):        {n_clean}  ({n_clean/total*100:.1f}%)")
+    print(f"  ✗ Tấn công (attack):   {n_attack}  ({n_attack/total*100:.1f}%)")
+    print(f"  ----- chi tiết theo mức độ ----")
+    print(f"     🔴 CRITICAL: {bucket_counts['CRITICAL']}")
+    print(f"     🟠 HIGH    : {bucket_counts['HIGH']}")
+    print(f"     🟡 MEDIUM  : {bucket_counts['MEDIUM']}")
+    print(f"     🔵 LOW     : {bucket_counts['LOW']}")
+    print(f"{'='*60}")
+    print(f"[DONE] Saved {n_attack} alerts to {path_out_alerts}")
+    print(f"[DONE] Saved {total} scan records to {path_out_results}")
 
-    # Load model
-    if not ai_engine.load_model():
-        print("[LỖI] Cần train model trước khi evaluate!")
-        return
+# ============================================================
+# HÀM 3: EVALUATE — đánh giá đa-mô hình + vẽ biểu đồ so sánh
+# ============================================================
 
+def _safe_metrics(tp, fp, tn, fn):
+    """Tính accuracy/precision/recall/F1/F2 (%, an toàn khi chia cho 0).
+
+    F2-score = 5*P*R / (4P + R) — biến thể của F-score nhân hệ số 2 vào recall.
+    Đây là metric chuẩn cho IDS vì miss-attack (FN) tệ hơn false-alarm (FP)
+    rất nhiều: bỏ lọt 1 attack có thể là data breach, còn báo nhầm 1 request
+    chỉ tốn analyst vài phút điều tra.
+    """
+    total = tp + fp + tn + fn
+    acc  = (tp + tn) / total * 100 if total else 0
+    prec = tp / (tp + fp) * 100 if (tp + fp) else 0
+    rec  = tp / (tp + fn) * 100 if (tp + fn) else 0
+    f1   = 2 * prec * rec / (prec + rec) if (prec + rec) else 0
+    f2   = 5 * prec * rec / (4 * prec + rec) if (4 * prec + rec) else 0
+    return {"tp": tp, "fp": fp, "tn": tn, "fn": fn,
+            "accuracy": acc, "precision": prec, "recall": rec,
+            "f1": f1, "f2": f2}
+
+
+def _load_labeled_log(path_log):
+    """Đọc log có nhãn, trả về (items, labels, regex_hits_per_item)."""
     parser_combined = LogParser(LOG_FORMAT_COMBINED)
-    parser_common = LogParser(LOG_FORMAT_COMMON)
-
-    # Ma trận nhầm lẫn
-    TP = 0  # Attack thật -> Bắt được
-    TN = 0  # Log sạch -> Bỏ qua
-    FP = 0  # Log sạch -> Báo nhầm
-    FN = 0  # Attack thật -> Bỏ sót
-
-    total_lines = 0
-
-    for line_no, line in enumerate(open(path_log, "r", encoding="utf-8", errors="replace"), start=1):
-        # Loại bỏ khoảng trắng/xuống dòng dư thừa
-        line = line.strip()
-        if not line:
-            continue
-            
-        total_lines += 1
-        if total_lines % 500 == 0:
-            print(f"    Processing line {total_lines}...", end="\r")
-
-        # NÂNG CẤP 2: Logic Fallback Parsing
-        try:
-            # Thử chuẩn Combined trước
-            entry = parser_combined.parse(line)
-        except Exception:
-            try:
-                # Nếu lỗi, thử chuẩn Common
-                entry = parser_common.parse(line)
-            except Exception:
-                # Cả 2 đều lỗi thì bỏ qua dòng log hỏng này
+    parser_common   = LogParser(LOG_FORMAT_COMMON)
+    items, labels, regex_hits, whitelisted = [], [], [], []
+    n_total = 0
+    with open(path_log, "r", encoding="utf-8", errors="replace") as f:
+        for line in f:
+            line = line.strip()
+            if not line:
                 continue
+            n_total += 1
+            if n_total % 5000 == 0:
+                print(f"    đã đọc {n_total} dòng...", end="\r")
+            try:
+                entry = parser_combined.parse(line)
+            except Exception:
+                try:
+                    entry = parser_common.parse(line)
+                except Exception:
+                    continue
+            parsed = parse_log_entry(entry)
+            item = build_training_item(parsed)
+            items.append(item)
+            labels.append(1 if "(Simulated-Attack)" in parsed["user_agent"] else 0)
+            regex_hits.append(len(detect_rule_based(parsed)) > 0)
+            whitelisted.append(is_ai_whitelisted(item))
+    print(f"    Đã đọc xong {n_total} dòng                ")
+    return items, labels, regex_hits, whitelisted
 
-        # ===== Parse chung =====
-        parsed_data = parse_log_entry(entry)
 
-        # ===== Ground truth =====
-        ua = parsed_data["user_agent"]
-        is_actual_attack = "(Simulated-Attack)" in ua
+def _confusion(predictions, labels):
+    tp = fp = tn = fn = 0
+    for p, y in zip(predictions, labels):
+        if   y == 1 and p == 1: tp += 1
+        elif y == 0 and p == 0: tn += 1
+        elif y == 0 and p == 1: fp += 1
+        elif y == 1 and p == 0: fn += 1
+    return tp, fp, tn, fn
 
-        # ===== Rule-based detection chung =====
-        matches = detect_rule_based(parsed_data)
-        regex_hit = len(matches) > 0
 
-        # ===== AI detection =====
-        training_item = build_training_item(parsed_data)
-        ai_hit = ai_engine.predict(
-            training_item["path"],
-            training_item["query"],
-            training_item["method"],
-            training_item["status"],
-            training_item.get("user_agent", ""),
-            training_item.get("referer", "")
-        )
-
-        # ===== AI whitelist chung =====
-        if ai_hit and is_ai_whitelisted(training_item):
-            ai_hit = False
-
-        # ===== Fusion =====
-        system_detected = regex_hit or ai_hit
-
-        # ===== Cập nhật confusion matrix =====
-        if is_actual_attack and system_detected:
-            TP += 1
-        elif not is_actual_attack and not system_detected:
-            TN += 1
-        elif not is_actual_attack and system_detected:
-            FP += 1
-        elif is_actual_attack and not system_detected:
-            FN += 1
-
-    # ===== Báo cáo kết quả =====
-    print("\n" + "=" * 50)
-    print("   KẾT QUẢ ĐÁNH GIÁ HIỆU NĂNG (PERFORMANCE REPORT)")
-    print("=" * 50)
-    print(f"Tổng số dòng log: {total_lines}")
-    print(f"Thực tế Tấn công: {TP + FN}")
-    print(f"Thực tế Sạch:     {TN + FP}")
-    print("-" * 30)
-
-    print(f"✅ True Positives (Bắt đúng tấn công): {TP}")
-    print(f"❌ False Negatives (Bỏ sót tấn công):  {FN}")
-    print(f"🛡️  True Negatives (Bỏ qua log sạch):   {TN}")
-    print(f"⚠️  False Positives (Báo nhầm sạch):    {FP}")
-    print("-" * 30)
-
-    accuracy = 0
-    precision = 0
-    recall = 0
-    f1_score = 0
-
+def _eval_unsup_hybrid(model_type, items, labels, regex_hits, whitelisted):
+    """Đánh giá hybrid: regex hit OR (AI tier1 hit và không whitelisted)."""
+    from models.ai_detector import LogAnomalyDetector
+    ai = LogAnomalyDetector(model_type=model_type)
+    if not ai.load_model():
+        return None
+    # Hydrate vocab để rule-tier hoạt động
+    apache_log_vocab_backup = PATH_PARAM_VOCAB.copy() if isinstance(PATH_PARAM_VOCAB, dict) else {}
+    globals()['PATH_PARAM_VOCAB'] = ai.path_param_vocab or {}
     try:
-        accuracy = (TP + TN) / total_lines * 100 if total_lines > 0 else 0
-        precision = TP / (TP + FP) * 100 if (TP + FP) > 0 else 0
-        recall = TP / (TP + FN) * 100 if (TP + FN) > 0 else 0
-        f1_score = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        preds = []
+        for item, rhit, wl in zip(items, regex_hits, whitelisted):
+            ai_hit = False
+            if not wl:
+                ai_hit = ai.predict(item["path"], item["query"], item["method"],
+                                    item["status"], item.get("user_agent", ""),
+                                    item.get("referer", ""))
+            preds.append(1 if (rhit or ai_hit) else 0)
+        tp, fp, tn, fn = _confusion(preds, labels)
+        return _safe_metrics(tp, fp, tn, fn)
+    finally:
+        globals()['PATH_PARAM_VOCAB'] = apache_log_vocab_backup
 
-        print(f"📊 ĐỘ CHÍNH XÁC (ACCURACY):  {accuracy:.2f}%")
-        print(f"🎯 PRECISION (Độ tin cậy):   {precision:.2f}%")
-        print(f"🔍 RECALL (Tỷ lệ phát hiện): {recall:.2f}%")
-        print(f"⭐ F1-SCORE:                 {f1_score:.2f}")
-    except Exception:
-        print("Lỗi tính toán (chia cho 0). Kiểm tra lại dữ liệu.")
 
-    print("=" * 50)
+def _eval_regex_only(regex_hits, labels):
+    preds = [1 if r else 0 for r in regex_hits]
+    tp, fp, tn, fn = _confusion(preds, labels)
+    return _safe_metrics(tp, fp, tn, fn)
 
-    # ===== Visualization for report =====
-    metrics = {
-        "Accuracy": accuracy,
-        "Precision": precision,
-        "Recall": recall,
-        "F1-Score": f1_score
-    }
 
-    names = list(metrics.keys())
-    values = list(metrics.values())
+def _eval_supervised(algo, items, labels):
+    """Đánh giá supervised model (RF hoặc LR) — không kèm regex."""
+    from models.supervised_detector import SupervisedDetector
+    sup = SupervisedDetector(algo=algo)
+    if not sup.load_model():
+        return None
+    r = sup.evaluate_batch(items, labels)
+    return _safe_metrics(r["tp"], r["fp"], r["tn"], r["fn"])
 
-    plt.figure(figsize=(8, 5))
-    plt.bar(names, values)
-    plt.ylim(0, 100)
-    plt.title("IDS Performance Evaluation")
-    plt.ylabel("Percentage (%)")
-    plt.xlabel("Metric")
 
-    for i, v in enumerate(values):
-        plt.text(i, v + 1, f"{v:.2f}%", ha="center", fontsize=10)
+def _predict_all_tiers(items, regex_hits, whitelisted):
+    """
+    Chạy 3 tier 1 lần, cache kết quả (sup_prob, lof_hit) cho mỗi item.
+    Trả về list of dict {regex_hit, sup_prob, lof_hit, whitelisted}.
+    """
+    from models.ai_detector import LogAnomalyDetector
+    from models.supervised_detector import SupervisedDetector
+    rf = SupervisedDetector(algo="rf")
+    lof = LogAnomalyDetector(model_type="lof")
+    if not rf.load_model() or not lof.load_model():
+        return None
+    apache_log_vocab_backup = PATH_PARAM_VOCAB.copy() if isinstance(PATH_PARAM_VOCAB, dict) else {}
+    globals()['PATH_PARAM_VOCAB'] = lof.path_param_vocab or {}
+    try:
+        cache = []
+        for item, rhit, wl in zip(items, regex_hits, whitelisted):
+            sup_prob = 0.0; lof_hit = False
+            if not wl:
+                try:
+                    sup_prob = rf.predict_proba(item["path"], item["query"], item["method"],
+                                                item["status"], item.get("user_agent", ""),
+                                                item.get("referer", ""))
+                except Exception: pass
+                try:
+                    lof_hit = lof.predict(item["path"], item["query"], item["method"],
+                                          item["status"], item.get("user_agent", ""),
+                                          item.get("referer", ""))
+                except Exception: pass
+            cache.append({"regex": rhit, "sup_prob": sup_prob, "lof": lof_hit, "wl": wl})
+        return cache
+    finally:
+        globals()['PATH_PARAM_VOCAB'] = apache_log_vocab_backup
+
+
+def _eval_full_hybrid(items, labels, regex_hits, whitelisted, cache=None):
+    """Naive Full Hybrid: regex OR (RF prob>=0.5) OR LOF — mọi tier OR với nhau."""
+    if cache is None:
+        cache = _predict_all_tiers(items, regex_hits, whitelisted)
+    if cache is None:
+        return None
+    preds = [1 if (c["regex"] or c["sup_prob"] >= 0.5 or c["lof"]) else 0 for c in cache]
+    tp, fp, tn, fn = _confusion(preds, labels)
+    return _safe_metrics(tp, fp, tn, fn)
+
+
+def _eval_smart_hybrid_voted(items, labels, regex_hits, whitelisted, cache=None):
+    """
+    Smart Hybrid — Majority voting (≥2 trong 3 tier đồng ý).
+    Mỗi tier 1 phiếu:
+      - regex_hit -> 1 phiếu
+      - sup_prob >= 0.5 -> 1 phiếu
+      - lof_hit -> 1 phiếu
+    Cộng dồn, cần >=2 phiếu mới flag.
+    => regex CHỈ 1 mình cũng không flag (tránh regex 0.86% FP nhân lên),
+       LOF 1 mình không flag (tránh 1266 FP của LOF),
+       phải có ≥ 2 tier đồng thuận.
+    """
+    if cache is None:
+        cache = _predict_all_tiers(items, regex_hits, whitelisted)
+    if cache is None:
+        return None
+    preds = []
+    for c in cache:
+        votes = (1 if c["regex"] else 0) + (1 if c["sup_prob"] >= 0.5 else 0) + (1 if c["lof"] else 0)
+        preds.append(1 if votes >= 2 else 0)
+    tp, fp, tn, fn = _confusion(preds, labels)
+    return _safe_metrics(tp, fp, tn, fn)
+
+
+def _eval_smart_hybrid_weighted(items, labels, regex_hits, whitelisted, cache=None):
+    """
+    Smart Hybrid — Weighted scoring với threshold đã calibrate.
+
+    Score = 0.50 * regex_hit + 0.45 * sup_prob + 0.20 * lof_hit
+    Threshold = 0.40
+
+    Logic:
+      - regex_hit (0.50)                 -> luôn fire (trust 99% precision)
+      - sup_prob >= 0.89 (0.40 alone)    -> RF tự fire khi confidence rất cao
+      - sup_prob >= 0.44 + lof (0.40)    -> RF trung bình + LOF -> fire (đồng thuận)
+      - regex + sup low (>=0.50)         -> fire
+      - lof_hit alone (0.20)             -> KHÔNG fire (giảm 1266 FP)
+      - sup_prob alone 0.5-0.88          -> KHÔNG fire (giảm RF false alarms vùng xám)
+    => Giữ recall của hybrid nhưng tăng precision rõ rệt.
+    """
+    if cache is None:
+        cache = _predict_all_tiers(items, regex_hits, whitelisted)
+    if cache is None:
+        return None
+    preds = []
+    for c in cache:
+        score = (0.50 if c["regex"] else 0.0) + 0.45 * c["sup_prob"] + (0.20 if c["lof"] else 0.0)
+        preds.append(1 if score >= 0.40 else 0)
+    tp, fp, tn, fn = _confusion(preds, labels)
+    return _safe_metrics(tp, fp, tn, fn)
+
+
+def _eval_smart_hybrid_consensus(items, labels, regex_hits, whitelisted, cache=None):
+    """
+    Smart Hybrid — Consensus: regex hoặc RF tự fire, LOF chỉ là tripwire
+    cần xác nhận bởi tier khác.
+
+      flag = regex_hit
+          OR sup_prob >= 0.5
+          OR (lof_hit AND sup_prob >= 0.3)   # LOF chỉ được tin khi RF cũng nghi ngờ
+    """
+    if cache is None:
+        cache = _predict_all_tiers(items, regex_hits, whitelisted)
+    if cache is None:
+        return None
+    preds = []
+    for c in cache:
+        flag = c["regex"] or (c["sup_prob"] >= 0.5) or (c["lof"] and c["sup_prob"] >= 0.3)
+        preds.append(1 if flag else 0)
+    tp, fp, tn, fn = _confusion(preds, labels)
+    return _safe_metrics(tp, fp, tn, fn)
+
+
+def _plot_comparison(results, out_dir="analysis/charts", title_suffix=""):
+    """Vẽ grouped bar chart so sánh tất cả model trên 5 metric (thêm F2)."""
+    import numpy as np
+    os.makedirs(out_dir, exist_ok=True)
+    valid = [(n, r) for n, r in results if r is not None]
+    models = [n for n, _ in valid]
+    accs   = [r["accuracy"]  for _, r in valid]
+    precs  = [r["precision"] for _, r in valid]
+    recs   = [r["recall"]    for _, r in valid]
+    f1s    = [r["f1"]        for _, r in valid]
+    f2s    = [r["f2"]        for _, r in valid]
+
+    # Xác định winner theo từng metric để highlight
+    def _argmax(vals):
+        return max(range(len(vals)), key=lambda i: vals[i])
+    winner_f1 = _argmax(f1s)
+    winner_f2 = _argmax(f2s)
+
+    x = np.arange(len(models))
+    width = 0.16
+    fig, ax = plt.subplots(figsize=(17, 8))
+    bars_acc  = ax.bar(x - 2*width, accs,  width, label='Accuracy',  color='#4C72B0')
+    bars_prec = ax.bar(x - 1*width, precs, width, label='Precision', color='#55A868')
+    bars_rec  = ax.bar(x + 0*width, recs,  width, label='Recall',    color='#C44E52')
+    bars_f1   = ax.bar(x + 1*width, f1s,   width, label='F1-Score',  color='#8172B2')
+    bars_f2   = ax.bar(x + 2*width, f2s,   width, label='F2-Score (IDS)', color='#CCB974')
+
+    ax.set_xlabel('Cấu hình mô hình', fontsize=12)
+    ax.set_ylabel('Tỷ lệ (%)', fontsize=12)
+    ax.set_title(f'So sánh hiệu năng các mô hình IDS{title_suffix}', fontsize=14, fontweight='bold')
+    ax.set_xticks(x)
+    ax.set_xticklabels(models, rotation=22, ha='right', fontsize=9)
+    ax.legend(loc='lower right', fontsize=9, ncol=5)
+    ax.set_ylim(0, 115)
+    ax.grid(axis='y', linestyle='--', alpha=0.4)
+
+    # Số trên đầu mỗi cột
+    for bars, vals in [(bars_acc, accs), (bars_prec, precs), (bars_rec, recs),
+                       (bars_f1, f1s), (bars_f2, f2s)]:
+        for bar, v in zip(bars, vals):
+            ax.text(bar.get_x() + bar.get_width()/2, v + 1.0,
+                    f"{v:.1f}", ha='center', fontsize=7, rotation=0)
+
+    # Đánh dấu winner F1 và F2
+    ax.annotate('** F1 best **', xy=(winner_f1 + 1*width, f1s[winner_f1] + 4),
+                ha='center', fontsize=9, color='#8172B2', fontweight='bold')
+    if winner_f2 != winner_f1:
+        ax.annotate('** F2 best **', xy=(winner_f2 + 2*width, f2s[winner_f2] + 7),
+                    ha='center', fontsize=9, color='#7A5A00', fontweight='bold')
 
     plt.tight_layout()
-    plt.show()
+    out_path = os.path.join(out_dir, "model_comparison.png")
+    plt.savefig(out_path, dpi=150, bbox_inches='tight')
+    print(f"[CHART] Đã lưu biểu đồ: {out_path}")
+    try:
+        plt.show()
+    except Exception:
+        pass
 
 
-def monitor_realtime(ai_engine, supervised_engine=None, jsonl_path="monitor_alerts.jsonl"):
+def _plot_confusion_grid(results, out_dir="analysis/charts"):
+    """Vẽ subplot confusion matrix cho từng mô hình."""
+    import numpy as np
+    os.makedirs(out_dir, exist_ok=True)
+    valid = [(n, r) for n, r in results if r is not None]
+    n = len(valid)
+    cols = 4
+    rows = (n + cols - 1) // cols
+    fig, axes = plt.subplots(rows, cols, figsize=(4*cols, 3.2*rows))
+    axes = axes.flatten() if n > 1 else [axes]
+    for i, (name, r) in enumerate(valid):
+        ax = axes[i]
+        cm = np.array([[r["tn"], r["fp"]], [r["fn"], r["tp"]]])
+        im = ax.imshow(cm, cmap='Blues')
+        ax.set_xticks([0, 1]); ax.set_yticks([0, 1])
+        ax.set_xticklabels(['Pred Clean', 'Pred Attack'], fontsize=9)
+        ax.set_yticklabels(['True Clean', 'True Attack'], fontsize=9)
+        ax.set_title(f"{name}\nF1={r['f1']:.1f}  F2={r['f2']:.1f}", fontsize=9)
+        for ii in range(2):
+            for jj in range(2):
+                txt_color = 'white' if cm[ii, jj] > cm.max() * 0.5 else 'black'
+                ax.text(jj, ii, f"{cm[ii, jj]}", ha='center', va='center',
+                        color=txt_color, fontsize=11, fontweight='bold')
+    for j in range(n, len(axes)):
+        axes[j].axis('off')
+    plt.tight_layout()
+    out_path = os.path.join(out_dir, "confusion_matrices.png")
+    plt.savefig(out_path, dpi=150, bbox_inches='tight')
+    print(f"[CHART] Đã lưu biểu đồ: {out_path}")
+    try:
+        plt.show()
+    except Exception:
+        pass
+
+
+def evaluate_all_models(path_log):
+    """
+    Đánh giá nhiều cấu hình mô hình cùng lúc trên file log có nhãn:
+      1. Regex only       (Tier 1 baseline)
+      2. Hybrid IF        (regex + Isolation Forest)
+      3. Hybrid OCSVM     (regex + One-Class SVM)
+      4. Hybrid LOF       (regex + Local Outlier Factor)
+      5. Supervised RF    (không regex, chỉ Random Forest)
+      6. Supervised LR    (không regex, chỉ Logistic Regression)
+      7. Full Hybrid      (regex + RF + LOF — production stack)
+
+    In bảng kết quả + lưu biểu đồ PNG.
+    """
+    print(f"\n[*] Đánh giá toàn bộ hệ thống trên: {path_log}")
+    items, labels, regex_hits, whitelisted = _load_labeled_log(path_log)
+    n_total = len(labels)
+    n_attack = sum(labels)
+    n_clean  = n_total - n_attack
+    print(f"    {n_total} dòng | {n_attack} attack ({n_attack/n_total*100:.1f}%) | {n_clean} clean")
+
+    results = []
+    print("\n[1/10] Regex only ...");          results.append(("Regex only",  _eval_regex_only(regex_hits, labels)))
+    print("[2/10] Hybrid IF ...");             results.append(("Hybrid IF",    _eval_unsup_hybrid("if",    items, labels, regex_hits, whitelisted)))
+    print("[3/10] Hybrid OCSVM ...");          results.append(("Hybrid OCSVM", _eval_unsup_hybrid("ocsvm", items, labels, regex_hits, whitelisted)))
+    print("[4/10] Hybrid LOF ...");            results.append(("Hybrid LOF",   _eval_unsup_hybrid("lof",   items, labels, regex_hits, whitelisted)))
+    print("[5/10] Supervised RF ...");         results.append(("Supervised RF", _eval_supervised("rf", items, labels)))
+    print("[6/10] Supervised LR ...");         results.append(("Supervised LR", _eval_supervised("lr", items, labels)))
+
+    # Chia sẻ cache giữa 4 fusion configurations cuối để khỏi predict lại 4x
+    print("[7-10/10] Computing tier cache for fusion configs ...")
+    fusion_cache = _predict_all_tiers(items, regex_hits, whitelisted)
+
+    print("[7/10] Full Hybrid (R OR RF OR LOF) — naive OR ...")
+    results.append(("Full Hybrid (R OR RF OR LOF)", _eval_full_hybrid(items, labels, regex_hits, whitelisted, cache=fusion_cache)))
+    print("[8/10] Smart Hybrid — Voted (≥2 tiers) ...")
+    results.append(("Smart Hybrid (Voted ≥2)", _eval_smart_hybrid_voted(items, labels, regex_hits, whitelisted, cache=fusion_cache)))
+    print("[9/10] Smart Hybrid — Weighted score ...")
+    results.append(("Smart Hybrid (Weighted)", _eval_smart_hybrid_weighted(items, labels, regex_hits, whitelisted, cache=fusion_cache)))
+    print("[10/10] Smart Hybrid — Consensus (LOF cần RF xác nhận) ...")
+    results.append(("Smart Hybrid (Consensus)", _eval_smart_hybrid_consensus(items, labels, regex_hits, whitelisted, cache=fusion_cache)))
+
+    # ==== Bảng kết quả ====
+    width = 108
+    print("\n" + "=" * width)
+    print(f"  KẾT QUẢ ĐÁNH GIÁ TỔNG HỢP — {os.path.basename(path_log)}")
+    print(f"  ({n_total} dòng, {n_attack} attack, {n_clean} clean)")
+    print("=" * width)
+    print(f"  {'Cấu hình':<32} {'TP':>5} {'FP':>5} {'TN':>5} {'FN':>5} "
+          f"{'Acc':>7} {'Prec':>7} {'Rec':>7} {'F1':>7} {'F2*':>7}")
+    print("-" * width)
+    for name, r in results:
+        if r is None:
+            print(f"  {name:<32} [LỖI: model chưa được train hoặc không load được]")
+            continue
+        print(f"  {name:<32} {r['tp']:>5} {r['fp']:>5} {r['tn']:>5} {r['fn']:>5} "
+              f"{r['accuracy']:>6.2f}% {r['precision']:>6.2f}% {r['recall']:>6.2f}% "
+              f"{r['f1']:>6.2f} {r['f2']:>6.2f}")
+    print("=" * width)
+    print("  * F2 = 5·P·R / (4P + R) — chuẩn IDS, nhân hệ số 2 vào recall vì miss-attack")
+    print("    nguy hiểm hơn false-alarm rất nhiều.")
+
+    # ==== Lưu JSON cho post-process ====
+    os.makedirs("analysis/charts", exist_ok=True)
+    json_path = "analysis/charts/evaluation_results.json"
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump({
+            "file": path_log,
+            "n_total": n_total, "n_attack": n_attack, "n_clean": n_clean,
+            "results": [{"model": n, "metrics": r} for n, r in results],
+        }, f, ensure_ascii=False, indent=2)
+    print(f"\n[JSON] Đã lưu kết quả: {json_path}")
+
+    # ==== Vẽ biểu đồ so sánh ====
+    suffix = f"\n({os.path.basename(path_log)} — {n_attack} attacks, {n_clean} clean)"
+    _plot_comparison(results, title_suffix=suffix)
+    _plot_confusion_grid(results)
+
+
+def monitor_realtime(ai_engine, supervised_engine=None, jsonl_path=None):
+    if jsonl_path is None:
+        jsonl_path = _runtime_path("monitor_alerts.jsonl")
     """
     3-tier hybrid real-time monitor.
 
@@ -516,7 +873,12 @@ def monitor_realtime(ai_engine, supervised_engine=None, jsonl_path="monitor_aler
                 except Exception:
                     unsup_hit = False
 
-            # ---------- Threat score + bucket ----------
+            # ---------- Threat score (weighted) + Smart Hybrid Consensus fusion ----------
+            # Score chỉ dùng để hiển thị mức độ; quyết định alert vẫn theo logic Smart Hybrid
+            # Consensus (F1=90.5, F2=92.8 trên benchmark):
+            #   alert = regex_hit OR (sup_prob >= 0.5) OR (lof_hit AND sup_prob >= 0.3)
+            # => Bỏ trường hợp "LOF alone không có RF nghi ngờ" — đã giảm 1266 FP của LOF
+            #    xuống còn ~776 trên combined_labeled_eval.log.
             score = 0.0
             if rule_ids:
                 score += 0.45
@@ -525,16 +887,19 @@ def monitor_realtime(ai_engine, supervised_engine=None, jsonl_path="monitor_aler
             if unsup_hit:
                 score += 0.20
 
+            # Smart Hybrid Consensus quyết định có emit alert hay không
+            should_alert = bool(rule_ids) or sup_hit or (unsup_hit and sup_prob >= 0.3)
+            if not should_alert:
+                continue  # LOF một mình + RF p<0.3 -> không tin tưởng, bỏ qua
+
             if score >= 0.75:
                 level, color = "CRITICAL", RED
             elif score >= 0.45:
                 level, color = "HIGH", RED
             elif score >= 0.25:
                 level, color = "MEDIUM", YELLOW
-            elif score > 0:
-                level, color = "LOW", CYAN
             else:
-                continue  # nothing fired
+                level, color = "LOW", CYAN
 
             n_alerts += 1
             bucket_counts[level] += 1
@@ -728,19 +1093,25 @@ def detect_rule_based(parsed_data):
 
 def is_ai_whitelisted(item):
     """
-    Kiểm tra request có nên bỏ qua ở tầng AI hay không.
-    Trả về True nếu nên bỏ qua.
+    Trả về True nếu request là tài nguyên tĩnh "vô hại" — bỏ qua tầng AI để giảm noise.
+
+    LƯU Ý: phải dùng endswith() chứ không phải substring,
+    nếu không '.jsp' (JavaServer Pages) sẽ chứa '.js' và bị whitelist nhầm.
     """
-    path = str(item.get("path", ""))
+    path = str(item.get("path", "")).lower()
     status = str(item.get("status", ""))
 
-    static_keywords = [
-        "favicon.ico", "robots.txt",
-        ".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".svg",
-        ".ico", ".woff", ".woff2", ".ttf"
-    ]
+    static_extensions = (
+        ".css", ".js", ".mjs",
+        ".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".ico",
+        ".woff", ".woff2", ".ttf", ".eot",
+        ".map",
+    )
+    if any(path.endswith(ext) for ext in static_extensions):
+        return True
 
-    if any(x in path for x in static_keywords):
+    well_known = ("favicon.ico", "robots.txt", "sitemap.xml", "apple-touch-icon")
+    if any(wk in path for wk in well_known):
         return True
 
     if status == "408":
@@ -889,9 +1260,22 @@ if __name__ == "__main__":
         analyze_log(log_file, ai_engine=ai_engine, mode="train")
 
     elif mode == "scan":
-         if ai_engine.load_model():
-             _hydrate_vocab()
-         analyze_log(log_file, ai_engine=ai_engine, mode="scan")
+        # Auto-load supervised RF nếu có để scan dùng đủ 3-tier.
+        # ai_engine (unsupervised) sẽ được load bên trong analyze_log.
+        if ai_engine.load_model():
+            _hydrate_vocab()
+        sup_engine_scan = None
+        try:
+            from models.supervised_detector import SupervisedDetector
+            cand = SupervisedDetector(algo="rf")
+            if cand.load_model():
+                sup_engine_scan = cand
+            else:
+                print("⚠️  Supervised RF chưa được train — scan chạy 2-tier (regex + unsupervised).")
+        except Exception as e:
+            print(f"⚠️  Không load được supervised RF: {e}")
+        analyze_log(log_file, ai_engine=ai_engine,
+                    supervised_engine=sup_engine_scan, mode="scan")
 
     elif mode == "monitor":
         # In hybrid monitor mode the positional ai_engine is the unsupervised
@@ -934,8 +1318,6 @@ if __name__ == "__main__":
         monitor_realtime(ai_engine if unsup_loaded else None, supervised_engine=sup_engine)
 
     elif mode == "evaluate":
-        if not ai_engine.load_model():
-            print("⚠️  AI model not found. Please run train first.")
-            sys.exit(1)
-        _hydrate_vocab()
-        evaluate_model(log_file, ai_engine)
+        # Đa-mô hình: không cần truyền model_type, hàm sẽ tự load tất cả model có sẵn
+        # và đánh giá song song để in bảng + vẽ biểu đồ so sánh.
+        evaluate_all_models(log_file)

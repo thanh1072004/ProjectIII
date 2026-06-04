@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.venv/
+venv/
+.Python
+*.egg-info/
+
+# Trained model artifacts — quá lớn để push, deploy bằng cách re-train hoặc transfer riêng
+trained_models/*.pkl
+
+# Runtime output — sinh ra mỗi lần monitor/scan
+runtime/*.jsonl
+runtime/*.log
+
+# Charts được generate lại bằng `python apache_log.py evaluate <log>`
+analysis/charts/*.png
+analysis/charts/*.json
+
+# Datasets — phần lớn quá to để push lên GitHub, build lại bằng scripts/
+# Giữ lại test_monitor.log (demo) + .gitkeep
+datasets/*.log
+!datasets/test_monitor.log
+
+# Helper file giữ thư mục datasets/ và trained_models/ trong git
+!datasets/.gitkeep
+!trained_models/.gitkeep
+!runtime/.gitkeep
+
+# Editor / OS junk
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Temporary
+*.tmp
+*.bak
+*.zip

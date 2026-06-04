@@ -20,7 +20,12 @@ from datetime import datetime
 import pandas as pd
 import streamlit as st
 
-ALERT_FILE = os.environ.get("IDS_ALERT_FILE", "monitor_alerts.jsonl")
+_PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+_DEFAULT_ALERT = os.path.join(_PROJECT_ROOT, "runtime", "monitor_alerts.jsonl")
+# Back-compat: nếu chưa tồn tại runtime/, đọc từ root
+if not os.path.exists(_DEFAULT_ALERT) and os.path.exists(os.path.join(_PROJECT_ROOT, "monitor_alerts.jsonl")):
+    _DEFAULT_ALERT = os.path.join(_PROJECT_ROOT, "monitor_alerts.jsonl")
+ALERT_FILE = os.environ.get("IDS_ALERT_FILE", _DEFAULT_ALERT)
 REFRESH_MS = int(os.environ.get("IDS_REFRESH_MS", "2000"))
 
 # --- page config ---

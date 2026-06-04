@@ -9,6 +9,23 @@ import math
 import joblib
 from urllib.parse import unquote, parse_qs
 
+# Project root = thư mục chứa apache_log.py / dashboard.py (1 cấp trên models/)
+_PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+_MODELS_DIR = os.environ.get("IDS_MODELS_DIR",
+                             os.path.join(_PROJECT_ROOT, "trained_models"))
+
+
+def _resolve_model_path(filename):
+    """Tìm file model: ưu tiên trained_models/, fallback root (back-compat)."""
+    new_path = os.path.join(_MODELS_DIR, filename)
+    if os.path.exists(new_path):
+        return new_path
+    legacy_path = os.path.join(_PROJECT_ROOT, filename)
+    if os.path.exists(legacy_path):
+        return legacy_path
+    # File chưa tồn tại → trả về đường dẫn mới để CHUẨN BỊ ghi (train mode)
+    return new_path
+
 from sklearn.ensemble import IsolationForest
 from sklearn.svm import OneClassSVM
 from sklearn.neighbors import LocalOutlierFactor
@@ -306,9 +323,13 @@ class LogAnomalyDetector:
 
     def __init__(self, model_type="if"):
         self.model_type = model_type.lower()
-        self.model_path = f"ad_model_{self.model_type}.pkl"
-        self.scaler_path = f"ad_scaler_{self.model_type}.pkl"
-        self.vocab_path = f"ad_vocab_{self.model_type}.pkl"
+        # Đường dẫn .pkl được resolve qua _resolve_model_path để hỗ trợ cả
+        # trained_models/ (cấu trúc mới) và root (back-compat). Khi train mới,
+        # tự động tạo thư mục trained_models/ nếu chưa tồn tại.
+        os.makedirs(_MODELS_DIR, exist_ok=True)
+        self.model_path  = _resolve_model_path(f"ad_model_{self.model_type}.pkl")
+        self.scaler_path = _resolve_model_path(f"ad_scaler_{self.model_type}.pkl")
+        self.vocab_path  = _resolve_model_path(f"ad_vocab_{self.model_type}.pkl")
 
         self.model = None
         self.scaler = StandardScaler()

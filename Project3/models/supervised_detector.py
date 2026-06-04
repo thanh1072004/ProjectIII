@@ -20,15 +20,16 @@ from sklearn.metrics import (
 )
 
 # Reuse the unsupervised extractor + vocab so the feature space is identical.
-from models.ai_detector import LogAnomalyDetector, parse_qs
+from models.ai_detector import LogAnomalyDetector, parse_qs, _resolve_model_path, _MODELS_DIR
 
 
 class SupervisedDetector:
     def __init__(self, algo="rf"):
         self.algo = algo.lower()
-        self.model_path = f"sup_model_{self.algo}.pkl"
-        self.scaler_path = f"sup_scaler_{self.algo}.pkl"
-        self.vocab_path = f"sup_vocab_{self.algo}.pkl"
+        os.makedirs(_MODELS_DIR, exist_ok=True)
+        self.model_path  = _resolve_model_path(f"sup_model_{self.algo}.pkl")
+        self.scaler_path = _resolve_model_path(f"sup_scaler_{self.algo}.pkl")
+        self.vocab_path  = _resolve_model_path(f"sup_vocab_{self.algo}.pkl")
 
         if self.algo == "rf":
             self.clf = RandomForestClassifier(
