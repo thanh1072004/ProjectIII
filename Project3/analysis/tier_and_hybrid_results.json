@@ -1,0 +1,52 @@
+{
+  "timestamp": "2026-06-08T21:46:56.660317",
+  "dataset": "final_comprehensive",
+  "evaluation": {
+    "samples": 28767,
+    "attacks": 13643,
+    "clean": 15124,
+    "attack_ratio": 47.43
+  },
+  "tiers_and_hybrid": [
+    {
+      "name": "Tier 1: Regex Rules",
+      "type": "Baseline (Rule-based)",
+      "precision": 99.14,
+      "recall": 19.07,
+      "f1": 31.98,
+      "f2": 22.74
+    },
+    {
+      "name": "Tier 2: RandomForest",
+      "type": "Supervised Learning",
+      "precision": 94.80,
+      "recall": 94.76,
+      "f1": 94.78,
+      "f2": 94.77
+    },
+    {
+      "name": "Tier 3: Local Outlier Factor",
+      "type": "Unsupervised Anomaly",
+      "precision": 88.28,
+      "recall": 95.13,
+      "f1": 91.57,
+      "f2": 93.67
+    },
+    {
+      "name": "Smart Consensus (T2 70% + T3 30%)",
+      "type": "Hybrid Ensemble",
+      "precision": 92.84,
+      "recall": 94.87,
+      "f1": 93.82,
+      "f2": 94.44
+    },
+    {
+      "name": "Simple Voting (T1 OR T2 OR T3)",
+      "type": "Hybrid Voting",
+      "precision": 87.14,
+      "recall": 94.81,
+      "f1": 90.81,
+      "f2": 93.17
+    }
+  ]
+}

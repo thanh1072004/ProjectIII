@@ -1,0 +1,28 @@
+{
+  "timestamp": "2026-06-08T21:44:00.819811",
+  "total_logs": 100130,
+  "train": {
+    "total": 70091,
+    "attack": 35150,
+    "clean": 34941,
+    "attack_ratio": 50.15
+  },
+  "eval": {
+    "total": 30039,
+    "attack": 14915,
+    "clean": 15124,
+    "attack_ratio": 49.65
+  },
+  "sources": {
+    "synthetic_attack": 25000,
+    "synthetic_clean": 25000,
+    "csic_attack": 25065,
+    "csic_clean": 36000
+  },
+  "tier3_clean_only": 34941,
+  "features": {
+    "post_body_support": "YES (40-50% of attack, 20% of clean)",
+    "encoding_variations": "5-8 per attack payload",
+    "temporal_distribution": "Spread across June 2026"
+  }
+}

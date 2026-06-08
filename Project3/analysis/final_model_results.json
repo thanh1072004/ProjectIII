@@ -1,0 +1,61 @@
+{
+  "timestamp": "2026-06-08T21:46:56.660317",
+  "dataset": "final_comprehensive",
+  "data_sources": {
+    "synthetic_attack": 25000,
+    "synthetic_clean": 25000,
+    "csic_attack": 25065,
+    "csic_clean": 36000,
+    "total": 111065
+  },
+  "training": {
+    "supervised_samples": 66984,
+    "supervised_attacks": 32043,
+    "unsupervised_clean_samples": 34941
+  },
+  "evaluation": {
+    "samples": 28767,
+    "attacks": 13643,
+    "clean": 15124,
+    "attack_ratio": 47.43
+  },
+  "supervised": [
+    {
+      "model": "RandomForest",
+      "precision": 94.8,
+      "recall": 94.76,
+      "f1": 94.78,
+      "f2": 94.77
+    },
+    {
+      "model": "LogisticRegression",
+      "precision": 85.82,
+      "recall": 74.9,
+      "f1": 79.99,
+      "f2": 76.86
+    }
+  ],
+  "unsupervised": [
+    {
+      "model": "Isolation Forest",
+      "precision": 63.02,
+      "recall": 93.14,
+      "f1": 75.17,
+      "f2": 85.01
+    },
+    {
+      "model": "One-Class SVM",
+      "precision": 62.27,
+      "recall": 91.38,
+      "f1": 74.07,
+      "f2": 83.57
+    },
+    {
+      "model": "Local Outlier Factor",
+      "precision": 88.28,
+      "recall": 95.13,
+      "f1": 91.57,
+      "f2": 93.67
+    }
+  ]
+}
