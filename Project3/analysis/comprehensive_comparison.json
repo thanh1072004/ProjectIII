@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-06-08T22:58:08.701722",
+  "timestamp": "2026-06-10T03:34:59.784164",
   "dataset": "final_comprehensive",
   "evaluation": {
     "samples": 28767,
@@ -56,20 +56,20 @@
     {
       "Tier": "Hybrid",
       "Type": "Smart Consensus",
-      "Model": "RF (70%) + LOF (30%)",
-      "Precision": 92.844,
-      "Recall": 94.871,
-      "F1": 93.81700000000001,
-      "F2": 94.44
+      "Model": "Smart Consensus",
+      "Precision": 91.19,
+      "Recall": 97.62,
+      "F1": 94.3,
+      "F2": 96.26
     },
     {
       "Tier": "Hybrid",
       "Type": "Simple Voting",
-      "Model": "T1 OR T2 OR T3",
-      "Precision": 87.14,
-      "Recall": 94.81,
-      "F1": 90.81333773014565,
-      "F2": 93.16985136567652
+      "Model": "Simple Voting",
+      "Precision": 87.78,
+      "Recall": 97.96,
+      "F1": 92.59,
+      "F2": 95.74
     }
   ]
 }

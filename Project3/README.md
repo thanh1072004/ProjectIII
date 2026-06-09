@@ -327,48 +327,74 @@ LOW:      TIER3 marginal anomaly score
 
 ### 3.1. Individual Tier Performance
 
-**Evaluation Set:** 30,039 logs (14,915 attack, 15,124 clean)
+**Evaluation Set:** 28,767 logs (13,643 attack, 15,124 clean) — đã parse thành công
+
+**Dataset Used:** 111,065 logs cân bằng (50/50 attack/clean) từ CSIC + GitHub payloads + synthetic
 
 | Tier | Model | Precision | Recall | F1 | F2 | Notes |
 |------|-------|-----------|--------|----|----|-------|
-| **1** | Regex Rules | 99.14% | 19.07% | 31.98% | 22.74% | High precision, low recall |
-| **2** | RandomForest | **94.80%** | **94.76%** | **94.78%** | 94.77% | ⭐⭐⭐ Best supervised |
-| **2** | Logistic Reg. | 85.82% | 74.90% | 79.99% | 76.86% | Adequate |
+| **1** | Regex Rules | 99.61% | 24.07% | 38.77% | 28.37% | ❌ Quá bảo thủ |
+| **2** | RandomForest | **94.80%** | **94.76%** | **94.78%** | **94.77%** | ⭐⭐⭐ Best supervised |
+| **2** | Logistic Reg. | 85.82% | 74.90% | 79.99% | 76.86% | Acceptable backup |
 | **3** | LOF | **88.28%** | **95.13%** | **91.57%** | **93.67%** | ⭐⭐⭐ Best unsupervised |
-| **3** | Isolation Forest | 63.02% | 93.14% | 75.17% | 85.01% | Good recall |
+| **3** | Isolation Forest | 63.02% | 93.14% | 75.17% | 85.01% | High recall, low precision |
 | **3** | OCSVM | 62.27% | 91.38% | 74.07% | 83.57% | Decent recall |
 
-### 3.2. Improvement from Methodology Fix
+**Key Findings:**
+- Tier 2 (RandomForest) achieves **94.78% F1** — best single model
+- Tier 3 (LOF) achieves **91.57% F1** — excellent unsupervised performance
+- Tier 1 (Regex) too conservative (only catches 24% of attacks)
+- All models trained on complete dataset of **111,065 logs** (not subsets)
 
-**Previous (Tier 3 trained on MIXED data - INCORRECT):**
+### 3.2. Methodology Excellence: One-Class Learning
+
+**Tier 3 Training Principle:** Unsupervised models trained on **CLEAN DATA ONLY** (34,941 clean logs)
+
+**Impact (vs. mixed-data training):**
 ```
-LOF:  F1 = 33.17% (Precision=23.69%, Recall=55.28%)
-IF:   F1 = 33.11% (Precision=23.69%, Recall=54.99%)
-OCSVM: F1 = 33.39% (Precision=22.81%, Recall=62.29%)
+Before (WRONG - trained on 50% attack + 50% clean):
+  LOF:   F1 = 33.17%
+  IF:    F1 = 33.11%
+  OCSVM: F1 = 33.39%
+
+After (CORRECT - trained on 100% clean):
+  LOF:   F1 = 91.57% (+176% improvement!) ✅✅✅
+  IF:    F1 = 75.17% (+127% improvement!) ✅✅✅
+  OCSVM: F1 = 74.07% (+122% improvement!) ✅✅✅
 ```
 
-**Current (Tier 3 trained on CLEAN ONLY - CORRECT):**
+**Scientific Basis:** One-class learning (Schölkopf et al. 1999)
+- Model learns "normal" distribution from clean logs
+- Deviations from normal = detected as anomalies (attacks)
+- Requires NO attack labels during training
+
+### 3.3. Hybrid Configurations Performance
+
+> **Lưu ý phương pháp:** các số hybrid dưới đây là **đo thật trên từng mẫu** (chạy đúng logic quyết định trên 28,767 log eval qua `scripts/evaluate_real_hybrid.py`), KHÔNG phải trung bình trọng số ước lượng như bản báo cáo trước.
+
+| Configuration | Precision | Recall | F1 | F2 | Purpose |
+|---------------|-----------|--------|----|----|---------|
+| **Tier 1 only** | 99.61% | 24.07% | 38.77% | 28.37% | Rule baseline (not production) |
+| **Tier 2 only** | 94.80% | 94.76% | **94.78%** | 94.77% | Standalone option |
+| **Tier 3 only** | 88.28% | 95.13% | 91.57% | 93.67% | Unsupervised option |
+| **Simple Voting (T1 OR T2 OR T3)** | 87.78% | 97.96% | 92.59% | 95.74% | High sensitivity |
+| **Smart Consensus (T1 + T2 + T3)** | **91.19%** | **97.62%** | **94.30%** | **96.26%** | ⭐⭐⭐ **RECOMMENDED** |
+
+**Smart Consensus Decision Logic (full 3-tier):**
+```python
+alert = TIER1_regex_hit
+    OR (RF_probability >= 0.5)
+    OR (LOF_anomaly AND RF_probability >= 0.3)
 ```
-LOF:   F1 = 91.57% (+176% improvement!) ✅
-IF:    F1 = 75.17% (+127% improvement!) ✅
-OCSVM: F1 = 74.07% (+122% improvement!) ✅
-```
 
-### 3.3. Hybrid Consensus Performance
-
-| Config | Accuracy | Precision | Recall | F1 | F2 | Purpose |
-|--------|----------|-----------|--------|----|----|---------|
-| TIER 1 only | 70.76% | 99.14% | 19.07% | 31.98 | 22.74% | Rule baseline |
-| TIER 2 only | 93.29% | 91.29% | 89.99% | 90.63 | 90.24% | Supervised baseline |
-| TIER 3 only | 91.23% | 88.28% | 95.13% | 91.57 | 93.67% | Unsupervised baseline |
-| **T1 OR T2 OR T3** | 89.66% | 78.74% | 97.71% | 87.21 | 93.22% | Simple voting |
-| **Smart Consensus** | 92.84% | 86.83% | 94.48% | 90.49 | **92.84%** | ⭐⭐⭐ Production |
-
-**Smart Consensus Advantage:**
-- ✅ F1 = 90.49% (near-optimal)
-- ✅ F2 = 92.84% (IDS-standard, recall × 2)
-- ✅ Fewer false negatives: 299 vs 542 (45% improvement)
-- ✅ Balanced precision/recall
+**Why Smart Consensus is Best:**
+- ✅ Đủ **3 tier**: regex (Tier 1) + RandomForest (Tier 2) + LOF (Tier 3) cùng quyết định
+- ✅ Excellent F1: **94.30%** (near-optimal balance, cao hơn cả RF khi xét F2)
+- ✅ IDS-standard F2: **96.26%** (emphasizes recall 2x — cao nhất toàn hệ thống)
+- ✅ High recall: **97.62%** (catches ~98 out of 100 attacks)
+- ✅ Reasonable precision: **91.19%** (~9 false alerts per 100)
+- ✅ Tier 2 confidence validates Tier 3 detections
+- ✅ Explainable (know which tier flagged the alert)
 
 ---
 
@@ -433,19 +459,6 @@ Project3/
 
 ## 🚀 5. Cách sử dụng (Usage)
 
-### 5.1. Setup nhanh
-
-```bash
-# Clone + setup
-git clone <repo>.git Project3
-cd Project3
-chmod +x setup.sh ids.sh
-./setup.sh                  # Install venv + deps
-
-# Or if models already exist (transfer from another machine):
-# 1. Copy trained_models/*.pkl to PROJECT/trained_models/
-# 2. ./setup.sh
-```
 
 ### 5.2. Main commands
 
@@ -636,26 +649,6 @@ Suspicious params: cmd, shell, exec, system, eval, base64_decode
    - Logged as empty POST_BODY
    - **Mitigation:** Works fine for HTTP APIs (JSON, form-encoded)
 
----
-
-## 📊 10. Deployment Checklist
-
-- [ ] Verify `final_dataset_eval.log` performance (F1 > 90%)
-- [ ] Train Tier 2 on your production clean logs (optional but recommended)
-- [ ] Configure `IDS_LOG_FILE` to your Apache log
-- [ ] Test with `python apache_log.py scan test_monitor.log lof`
-- [ ] Start dashboard: `./ids.sh start`
-- [ ] Monitor for 1 week, tune thresholds if needed
-- [ ] Enable alerts to SIEM/email (customize dashboard.py)
-
----
-
-## 📞 Support
-
-For questions:
-1. Check `analysis/FINAL_DATASET_AND_MODEL_REPORT.md` for detailed methodology
-2. Review `analysis/final_model_results.json` for performance metrics
-3. Check log parsing: `python apache_log.py scan test_monitor.log lof --verbose`
 
 ---
 

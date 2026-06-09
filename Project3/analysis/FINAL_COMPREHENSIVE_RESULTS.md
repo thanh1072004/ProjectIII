@@ -10,14 +10,16 @@
 
 ### **Overall Rankings by F1-Score:**
 
+> **Lưu ý:** Các số hybrid (Smart Consensus, Simple Voting) là **đo thật trên từng mẫu** (`scripts/evaluate_real_hybrid.py`), không phải trung bình trọng số ước lượng như bản trước.
+
 | Rank | Model | Tier | Type | F1 Score | Status |
 |------|-------|------|------|----------|--------|
-| 🥇 1 | RandomForest | Tier 2 | Supervised | **94.78%** | ⭐⭐⭐ Best |
-| 🥈 2 | Smart Consensus (RF 70% + LOF 30%) | Hybrid | Ensemble | **93.82%** | ⭐⭐ Recommended |
-| 🥉 3 | Local Outlier Factor | Tier 3 | Unsupervised | **91.57%** | ⭐⭐ Excellent |
-| 4 | Simple Voting (T1 OR T2 OR T3) | Hybrid | Voting | **90.81%** | ⭐ Good |
-| 5 | Isolation Forest | Tier 3 | Unsupervised | **75.17%** | ✓ Fair |
-| 6 | LogisticRegression | Tier 2 | Supervised | **79.99%** | ✓ Fair |
+| 🥇 1 | RandomForest | Tier 2 | Supervised | **94.78%** | ⭐⭐⭐ Best F1 |
+| 🥈 2 | Smart Consensus (RF + LOF) | Hybrid | Ensemble | **94.30%** | ⭐⭐⭐ Best F2 (96.26%) |
+| 🥉 3 | Simple Voting (T1 OR T2 OR T3) | Hybrid | Voting | **92.59%** | ⭐⭐ High sensitivity |
+| 4 | Local Outlier Factor | Tier 3 | Unsupervised | **91.57%** | ⭐⭐ Excellent |
+| 5 | LogisticRegression | Tier 2 | Supervised | **79.99%** | ✓ Fair |
+| 6 | Isolation Forest | Tier 3 | Unsupervised | **75.17%** | ✓ Fair |
 | 7 | One-Class SVM | Tier 3 | Unsupervised | **74.07%** | ✓ Fair |
 
 ---
@@ -27,15 +29,15 @@
 ### **TIER 1: Regex Rules (Baseline)**
 
 ```
-Precision:  99.14%  ← Extremely high (very few false positives)
-Recall:     19.07%  ← Very low (misses 80% of attacks)
-F1:         31.98%  ← Poor overall balance
-F2:         22.74%  ← IDS-standard metric (low)
+Precision:  99.61%  ← Extremely high (very few false positives)
+Recall:     24.07%  ← Very low (misses ~76% of attacks)
+F1:         38.77%  ← Poor overall balance
+F2:         28.37%  ← IDS-standard metric (low)
 ```
 
 **Analysis:**
-- ✅ **Strength:** Almost zero false positives (99% accurate when it flags)
-- ❌ **Weakness:** Misses 4 out of 5 attacks (only catches 19%)
+- ✅ **Strength:** Almost zero false positives (99.6% accurate when it flags)
+- ❌ **Weakness:** Misses ~3 out of 4 attacks (only catches 24%)
 - **Use Case:** Only useful as first-pass filter for obvious attacks
 - **Verdict:** Too conservative for production IDS alone
 
@@ -143,23 +145,25 @@ F2:         83.57%  ← Good
 ### **1. Smart Consensus (RF 70% + LOF 30%) - RECOMMENDED 🌟**
 
 ```
-Precision:  92.84%  ← Very high
-Recall:     94.87%  ← Very high
-F1:         93.82%  ← Excellent
-F2:         94.44%  ← IDS-optimized (excellent)
+Precision:  91.19%  ← Very high
+Recall:     97.62%  ← Highest recall among balanced models
+F1:         94.30%  ← Excellent
+F2:         96.26%  ← IDS-optimized (HIGHEST F2 in the system)
 ```
 
-**Decision Logic:**
+**Decision Logic (full 3-tier — regex + supervised + unsupervised):**
 ```
-alert = (RF probability >= 0.5)
+alert = TIER1_regex_hit
+    OR (RF probability >= 0.5)
     OR (LOF anomaly AND RF probability >= 0.3)
 ```
 
 **Rationale:**
+- ✅ **All 3 tiers vote** — regex (Tier 1) + RF (Tier 2) + LOF (Tier 3)
 - ✅ **RF dominates** when confident (high precision)
 - ✅ **LOF validates** weak RF signals (catches edge cases)
-- ✅ **Reduces false positives** by 38% vs LOF alone
-- ✅ **Maintains high recall** (catches 94.87% of attacks)
+- ✅ **Highest recall (97.62%)** — LOF lifts recall above RF/LOF alone
+- ✅ **Best F2 (96.26%)** — optimal for IDS where misses cost more than false alarms
 
 **Benefits:**
 - Tier 2 learns attack patterns → high precision
@@ -175,10 +179,10 @@ alert = (RF probability >= 0.5)
 ### **2. Simple Voting (T1 OR T2 OR T3)**
 
 ```
-Precision:  87.14%  ← Good
-Recall:     94.81%  ← Excellent
-F1:         90.81%  ← Good
-F2:         93.17%  ← IDS-optimized
+Precision:  87.78%  ← Good
+Recall:     97.96%  ← Excellent (highest recall in the system)
+F1:         92.59%  ← Very good
+F2:         95.74%  ← IDS-optimized
 ```
 
 **Decision Logic:**
@@ -189,9 +193,9 @@ alert = TIER1_regex_hit
 ```
 
 **Rationale:**
-- ✅ **Coverage:** Catches attacks via any tier
+- ✅ **Coverage:** Catches attacks via any tier (98% recall)
 - ✅ **Flexibility:** Easy to add/remove tiers
-- ❌ **False Positives:** Higher (13% FP rate)
+- ❌ **False Positives:** Higher (~12% FP rate)
 
 **Use Case:** High-sensitivity detection (security-focused, accept FP)
 
@@ -206,9 +210,9 @@ alert = TIER1_regex_hit
 | Model | Precision | False Positives | Interpretation |
 |-------|-----------|-----------------|-----------------|
 | RandomForest (Tier 2) | 94.80% | 5.20% | Out of 100 alerts, ~5 are wrong |
-| Smart Consensus | 92.84% | 7.16% | Out of 100 alerts, ~7 are wrong |
+| Smart Consensus | 91.19% | 8.81% | Out of 100 alerts, ~9 are wrong |
 | LOF (Tier 3) | 88.28% | 11.72% | Out of 100 alerts, ~12 are wrong |
-| Regex Rules (Tier 1) | 99.14% | 0.86% | Out of 100 alerts, <1 is wrong |
+| Regex Rules (Tier 1) | 99.61% | 0.39% | Out of 100 alerts, <1 is wrong |
 
 **Analysis:** RandomForest maintains 95% precision (most alerts are real attacks)
 
@@ -218,13 +222,14 @@ alert = TIER1_regex_hit
 
 | Model | Recall | False Negatives | Interpretation |
 |-------|--------|-----------------|-----------------|
-| Smart Consensus | 94.87% | 5.13% | Misses 5 out of 100 attacks |
+| Simple Voting | 97.96% | 2.04% | Misses ~2 out of 100 attacks |
+| Smart Consensus | 97.62% | 2.38% | Misses ~2 out of 100 attacks |
 | LOF (Tier 3) | 95.13% | 4.87% | Misses ~5 out of 100 attacks |
 | RandomForest (Tier 2) | 94.76% | 5.24% | Misses 5 out of 100 attacks |
 | Isolation Forest (Tier 3) | 93.14% | 6.86% | Misses 7 out of 100 attacks |
-| Regex Rules (Tier 1) | 19.07% | 80.93% | **Misses 80 out of 100 attacks** ⚠️ |
+| Regex Rules (Tier 1) | 24.07% | 75.93% | **Misses ~76 out of 100 attacks** ⚠️ |
 
-**Analysis:** RF, Smart Consensus, and LOF all miss ~5% (similar high sensitivity)
+**Analysis:** The hybrids (Smart Consensus, Simple Voting) reach the highest recall (~98%), beating every single model — Tier 3 LOF lifts the recall of Tier 2 RF.
 
 ---
 
@@ -236,10 +241,11 @@ F1 = 2 × (Precision × Recall) / (Precision + Recall)
 
 **Ranking:**
 1. RandomForest: 94.78% ← Perfect balance
-2. Smart Consensus: 93.82% ← Excellent balance
-3. LOF: 91.57% ← Very good balance
-4. Isolation Forest: 75.17% ← Fair balance
+2. Smart Consensus: 94.30% ← Excellent balance
+3. Simple Voting: 92.59% ← Very good balance
+4. LOF: 91.57% ← Very good balance
 5. LogisticRegression: 79.99% ← Fair balance
+6. Isolation Forest: 75.17% ← Fair balance
 
 ---
 
@@ -251,10 +257,11 @@ F2 = 5 × (Precision × Recall) / (4 × Precision + Recall)
 ```
 
 **Ranking:**
-1. RandomForest: 94.77% ← Exceptional
-2. Smart Consensus: 94.44% ← Exceptional
-3. LOF: 93.67% ← Excellent
-4. Isolation Forest: 85.01% ← Good
+1. Smart Consensus: 96.26% ← Exceptional (best F2 in system)
+2. Simple Voting: 95.74% ← Exceptional
+3. RandomForest: 94.77% ← Exceptional
+4. LOF: 93.67% ← Excellent
+5. Isolation Forest: 85.01% ← Good
 
 **Why F2 matters for IDS:** Missing attacks (false negatives) is worse than false positives
 
@@ -265,16 +272,16 @@ F2 = 5 × (Precision × Recall) / (4 × Precision + Recall)
 ### **For Production IDS: Use Smart Consensus**
 
 ```yaml
+Tier 1 (regex):       SQLi/XSS/LFI/CMD signatures + scanner UA
 Primary (Tier 2):     RandomForest → 94.78% F1
 Validation (Tier 3):  LOF anomaly detection → 91.57% F1
-Weighting:            70% RF + 30% LOF
-Final Decision:       alert if (RF ≥ 0.5) OR (LOF AND RF ≥ 0.3)
+Final Decision:       alert if regex_hit OR (RF ≥ 0.5) OR (LOF AND RF ≥ 0.3)
 
 Expected Performance:
-  - Precision:  92.84%  (7 false alerts per 100 detections)
-  - Recall:     94.87%  (catches 95 out of 100 attacks)
-  - F1:         93.82%  (excellent overall)
-  - F2:         94.44%  (IDS-optimized)
+  - Precision:  91.19%  (~9 false alerts per 100 detections)
+  - Recall:     97.62%  (catches ~98 out of 100 attacks)
+  - F1:         94.30%  (excellent overall)
+  - F2:         96.26%  (IDS-optimized — best in system)
 ```
 
 **Advantages:**
@@ -321,9 +328,10 @@ Trade-off: No anomaly detection (fixed patterns)
 ### **Precision vs Recall**
 
 ```
-High Precision (few false alerts):  RF (94.80%) > Smart (92.84%) > LOF (88.28%)
-High Recall (few missed attacks):    LOF (95.13%) ≈ Smart (94.87%) > RF (94.76%)
-Balanced:                            RF (94.78%) > Smart (93.82%) > LOF (91.57%)
+High Precision (few false alerts):  RF (94.80%) > Smart (91.19%) > LOF (88.28%)
+High Recall (few missed attacks):    Voting (97.96%) ≈ Smart (97.62%) > LOF (95.13%) > RF (94.76%)
+Balanced F1:                         RF (94.78%) > Smart (94.30%) > Voting (92.59%) > LOF (91.57%)
+Best F2 (IDS):                       Smart (96.26%) > Voting (95.74%) > RF (94.77%)
 ```
 
 **Visualization:** See Precision vs Recall chart (scatter plot)
@@ -343,8 +351,8 @@ Balanced:                            RF (94.78%) > Smart (93.82%) > LOF (91.57%)
 | **Requires Labels** | No | Yes | No | Yes (Tier 2) |
 | **Adaptive** | Static | Static | Static | Static |
 | **Explainability** | ✅ High | ⚠️ Medium | ⚠️ Medium | ✅ High |
-| **False Positives** | 0.86% | 5.20% | 11.72% | 7.16% |
-| **False Negatives** | 80.93% | 5.24% | 4.87% | 5.13% |
+| **False Positives** | 0.39% | 5.20% | 11.72% | 8.81% |
+| **False Negatives** | 75.93% | 5.24% | 4.87% | 2.38% |
 | **Best For** | Quick rules | General IDS | Anomaly detection | Production |
 
 ---
@@ -354,9 +362,9 @@ Balanced:                            RF (94.78%) > Smart (93.82%) > LOF (91.57%)
 ### **Which Model to Deploy?**
 
 **Best Overall:** 🥇 **Smart Consensus (RF 70% + LOF 30%)**
-- F1 = 93.82%
-- F2 = 94.44% (IDS-optimized)
-- Balanced precision/recall
+- F1 = 94.30%
+- F2 = 96.26% (IDS-optimized — best in system)
+- Highest recall (97.62%) among balanced models
 - Production-ready
 - Requires supervised training data
 
@@ -375,7 +383,7 @@ Balanced:                            RF (94.78%) > Smart (93.82%) > LOF (91.57%)
 - No attack labels needed
 
 **Not Recommended:** ❌ **Regex Rules Alone**
-- Too conservative (19% recall)
+- Too conservative (24% recall)
 - Only catch obvious attacks
 - Use as Tier 1 validation, not primary detection
 

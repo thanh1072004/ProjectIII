@@ -35,8 +35,25 @@ def load_results():
     with open(results_file, 'r') as f:
         return json.load(f)
 
+def _load_real_hybrids():
+    """Load REAL per-sample hybrid metrics produced by evaluate_real_hybrid.py.
+
+    These replace the old weighted-average ESTIMATES — the hybrid rows here are
+    now measured on every eval sample with the actual consensus/voting logic.
+    """
+    path = os.path.join(PROJECT_ROOT, "analysis", "tier_and_hybrid_results.json")
+    with open(path, 'r') as f:
+        th = json.load(f)
+    by_name = {t['name']: t for t in th['tiers_and_hybrid']}
+    return by_name
+
+
 def build_comprehensive_dataframe(results):
-    """Build comprehensive comparison dataframe"""
+    """Build comprehensive comparison dataframe.
+
+    Single-model rows come from final_model_results.json; hybrid rows come from
+    the REAL per-sample evaluation in tier_and_hybrid_results.json.
+    """
 
     data = []
 
@@ -64,41 +81,29 @@ def build_comprehensive_dataframe(results):
             'F2': model['f2'],
         })
 
-    # Hybrid: Smart Consensus (Tier 2 + Best Tier 3)
-    # Assumption: Tier 2 RF probability + Tier 3 LOF validation
-    # Decision: alert if (RF >= 0.5) OR (LOF anomaly AND RF >= 0.3)
-    # Conservative estimate: weighted average
+    # Hybrid rows — REAL measured numbers (not weighted-average estimates).
+    hyb = _load_real_hybrids()
 
-    hybrid_precision = (94.8 * 0.7 + 88.28 * 0.3)  # 70% RF, 30% LOF
-    hybrid_recall = (94.76 * 0.7 + 95.13 * 0.3)
-    hybrid_f1 = (94.78 * 0.7 + 91.57 * 0.3)
-    hybrid_f2 = (94.77 * 0.7 + 93.67 * 0.3)
-
+    smart = hyb['Smart Consensus (T2 70% + T3 30%)']
     data.append({
         'Tier': 'Hybrid',
         'Type': 'Smart Consensus',
-        'Model': 'RF (70%) + LOF (30%)',
-        'Precision': hybrid_precision,
-        'Recall': hybrid_recall,
-        'F1': hybrid_f1,
-        'F2': hybrid_f2,
+        'Model': 'Smart Consensus',
+        'Precision': smart['precision'],
+        'Recall': smart['recall'],
+        'F1': smart['f1'],
+        'F2': smart['f2'],
     })
 
-    # Alternative Hybrid: Simple Voting (any tier flags)
-    # Precision: lower (more FP), Recall: higher (fewer misses)
-    voting_precision = (94.8 * 0.6 + 88.28 * 0.2 + 63.02 * 0.2)  # RF dominant
-    voting_recall = min(94.76 + 0.05, 100.0)  # Slightly higher
-    voting_f1 = (2 * voting_precision * voting_recall) / (voting_precision + voting_recall)
-    voting_f2 = (5 * voting_precision * voting_recall) / (4 * voting_precision + voting_recall)
-
+    voting = hyb['Simple Voting (T1 OR T2 OR T3)']
     data.append({
         'Tier': 'Hybrid',
         'Type': 'Simple Voting',
-        'Model': 'T1 OR T2 OR T3',
-        'Precision': voting_precision,
-        'Recall': voting_recall,
-        'F1': voting_f1,
-        'F2': voting_f2,
+        'Model': 'Simple Voting',
+        'Precision': voting['precision'],
+        'Recall': voting['recall'],
+        'F1': voting['f1'],
+        'F2': voting['f2'],
     })
 
     return pd.DataFrame(data)
@@ -117,8 +122,11 @@ def print_text_comparison(df, results):
     print("\n" + "-" * 120)
     print("TIER 1: REGEX RULES (Baseline for comparison)")
     print("-" * 120)
-    print("Precision: 99.14%  |  Recall: 19.07%  |  F1: 31.98%  |  F2: 22.74%")
-    print("→ Very high precision but low recall (misses 80% of attacks)")
+    _t1 = _load_real_hybrids().get('Tier 1: Regex Rules', {})
+    if _t1:
+        print(f"Precision: {_t1['precision']:.2f}%  |  Recall: {_t1['recall']:.2f}%  |  "
+              f"F1: {_t1['f1']:.2f}%  |  F2: {_t1['f2']:.2f}%")
+    print("→ Very high precision but low recall (misses most attacks)")
 
     print("\n" + "-" * 120)
     print("TIER 2: SUPERVISED LEARNING")
@@ -320,7 +328,7 @@ def create_matplotlib_charts(df, results):
     # Select representatives
     rf_data = df[df['Model'] == 'RandomForest'].iloc[0]
     lof_data = df[df['Model'] == 'Local Outlier Factor'].iloc[0]
-    hybrid_data = df[df['Model'] == 'RF (70%) + LOF (30%)'].iloc[0]
+    hybrid_data = df[df['Model'] == 'Smart Consensus'].iloc[0]
 
     for data, color, label in [(rf_data, '#2ecc71', 'RandomForest (Tier 2)'),
                                 (lof_data, '#3498db', 'LOF (Tier 3)'),
