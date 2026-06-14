@@ -1,0 +1,168 @@
+% =====================================================================
+%  CHAPTER 5 — CONCLUSION AND FUTURE WORK
+%  Graduation thesis: A hybrid (signature + AI) web intrusion detection
+%  system operating on Apache HTTP/HTTPS access logs.
+%
+%  HOW TO USE
+%  ----------
+%  * Standalone build: compiles on its own (run pdflatex twice for refs).
+%    As a standalone document the chapter is numbered 1; inside the thesis
+%    it becomes the final chapter automatically.
+%  * Integration: delete the two "STANDALONE WRAPPER" blocks and keep the
+%    content from "\chapter{...}" onward. The \cite{...} keys resolve once
+%    this chapter is included alongside the others and the shared
+%    bibliography is built.
+% =====================================================================
+
+% --------------------- STANDALONE WRAPPER (begin) --------------------
+\documentclass[12pt,a4paper]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage{enumitem}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{textcomp}
+
+\newlist{romanlist}{enumerate}{1}
+\setlist[romanlist]{label=(\roman*), leftmargin=2.2em, itemsep=2pt}
+
+% Note: the \cite keys (pham2016, althubiti2017) resolve from the global
+% bibliography once this chapter is integrated. In a standalone build they
+% will show as undefined-citation placeholders, which is harmless.
+
+\begin{document}
+% ---------------------- STANDALONE WRAPPER (end) ---------------------
+
+\chapter{Conclusion and Future Work}
+\label{chap:conclusion}
+
+This final chapter closes the thesis. Section~\ref{sec:summary} summarises
+the problems the project set out to solve and what it achieved, and then
+states honestly the limitations that remain. Section~\ref{sec:future} builds
+on those limitations to propose concrete directions for future development.
+
+% =====================================================================
+\section{Summary}
+\label{sec:summary}
+
+The objective of this project was to build a web intrusion detection system
+that overcomes the central weakness of the existing literature surveyed in
+Chapter~\ref{chap:background}, namely the reliance on a single detection
+paradigm. Signature-based detectors are precise but blind to new attacks,
+purely supervised detectors require labelled data and cannot generalise
+beyond the attack families they were trained on, and purely unsupervised
+detectors catch novel anomalies but at the price of many false alarms. The
+project addressed this gap by designing, implementing, and evaluating a
+three-tier hybrid system that fuses all three paradigms, and the work
+delivered the following concrete results.
+
+\begin{romanlist}
+  \item \textbf{A working three-tier hybrid detector.} The system combines a
+        signature- and rule-based tier, a supervised Random Forest tier, and
+        an unsupervised one-class anomaly tier, and reconciles their opinions
+        through a smart consensus rule in which the supervised model
+        validates the anomaly tier. This design, detailed in
+        Chapter~\ref{chap:solution}, is the core contribution of the thesis.
+  \item \textbf{A balanced benchmark dataset.} A corpus of $111{,}065$ log
+        lines was assembled from the CSIC 2010 dataset, real attack payloads
+        from a public repository, and synthetic traffic, balanced evenly
+        between attack and clean requests, and partitioned so that the
+        one-class tier could be trained on clean traffic alone.
+  \item \textbf{Operation on raw server logs.} Unlike most prior work, which
+        operates on pre-processed feature sets, the system works directly on
+        Apache access logs. It performs multi-layer URL decoding to defeat
+        encoding-based evasion, supports attacks delivered through the POST
+        body, and represents every request with a compact, shared
+        $22$-feature vector.
+  \item \textbf{Strong, recall-oriented results.} As reported in
+        Chapter~\ref{chap:evaluation}, the supervised tier alone reaches an F1
+        of $94.78\%$ and the one-class tier alone an F1 of $91.57\%$, while
+        the proposed smart consensus achieves the system's best F2 score of
+        $96.26\%$, combining a recall of $97.62\%$ with a precision of
+        $91.19\%$. The consensus therefore meets the operational priority of
+        an intrusion detection system, which is to minimise missed attacks.
+  \item \textbf{Explainability and a usable tool.} Because the verdict is a
+        transparent combination of three named signals, every alert is
+        annotated with the tiers that produced it, and the system ships with
+        a real-time monitoring mode and a dashboard, making it usable in
+        practice rather than only as an offline experiment.
+\end{romanlist}
+
+Despite these results, several limitations remain and should be acknowledged.
+First, the models were trained on the CSIC 2010 e-commerce traffic together
+with generic web traffic, so when deployed on an application with very
+different normal behaviour (for example a content-management system or a
+bespoke API) the system may raise more false positives until it is retrained
+on that application's own clean logs. Second, the unsupervised tier assumes a
+stable notion of ``normal'' traffic; if the legitimate behaviour of the
+protected application drifts over time, previously unseen but benign patterns
+may be flagged as anomalies, a problem only partially mitigated by the smart
+consensus. Third, the anti-evasion decoding handles a bounded number of
+encoding layers, so payloads hidden behind an unusually deep or binary
+encoding can still slip through. Fourth, the system inspects textual request
+content, so attacks carried in binary POST bodies are not analysed. Finally,
+the evaluation, although conducted on a sizeable balanced set, was performed
+on a single dataset family and on logs already decrypted by the server; the
+system performs detection and alerting only and does not, by itself, block
+malicious requests. These limitations directly motivate the directions
+proposed next.
+
+% =====================================================================
+\section{Suggestion for Future Works}
+\label{sec:future}
+
+Building on the limitations identified above, several avenues for future
+development are worth pursuing.
+
+\begin{romanlist}
+  \item \textbf{Evaluation on more and more realistic datasets.} The most
+        important next step, also recommended by Pham et al.~\cite{pham2016},
+        is to validate the system on additional datasets, especially traffic
+        collected from a real production environment, so that its
+        generalisation beyond CSIC 2010 can be measured rather than assumed.
+
+  \item \textbf{Semi-supervised and online learning.} Following the
+        suggestion of Althubiti et al.~\cite{althubiti2017}, semi-supervised
+        techniques could reduce the labelling cost while retaining accuracy.
+        In parallel, an online or incremental learning scheme that
+        periodically refreshes the models on recent clean traffic would
+        address the baseline-drift limitation of the unsupervised tier.
+
+  \item \textbf{Concept-drift detection and an analyst feedback loop.} The
+        system could monitor its own false-positive rate and trigger
+        retraining when drift is detected, and it could incorporate the
+        analyst's confirmations and dismissals of alerts as new labels,
+        turning day-to-day operation into a continuous improvement process.
+
+  \item \textbf{Richer representations for the anomaly tier.} Replacing or
+        augmenting the hand-crafted feature vector with a learned
+        representation, for instance from an autoencoder or a sequence model
+        over the request text, could let the unsupervised tier capture
+        semantic anomalies that the current features miss, while preserving
+        the one-class training discipline.
+
+  \item \textbf{Stronger evasion and adversarial resistance.} Extending the
+        decoder to handle deeper and binary encodings, and explicitly testing
+        the system against adversarially crafted payloads, would harden it
+        against attackers who deliberately target the detector.
+
+  \item \textbf{From detection to prevention.} Finally, the system could be
+        integrated with a web application firewall so that high-confidence
+        alerts trigger automatic blocking, turning the present detection-only
+        pipeline into an active prevention mechanism, with the consensus
+        score serving as a natural, tunable threshold for the blocking
+        decision.
+\end{romanlist}
+
+Taken together, these directions would extend the thesis from a strong,
+explainable, recall-oriented detector validated on a benchmark dataset
+towards an adaptive, self-improving, and preventive system suitable for
+long-term deployment in a changing production environment.
+
+% --------------------- STANDALONE WRAPPER (begin) --------------------
+\end{document}
+% ---------------------- STANDALONE WRAPPER (end) ---------------------

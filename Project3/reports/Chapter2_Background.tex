@@ -1,0 +1,758 @@
+% =====================================================================
+%  CHAPTER 2 — BACKGROUND AND RELATED WORK
+%  Graduation thesis: A hybrid (signature + AI) web intrusion detection
+%  system operating on Apache HTTP/HTTPS access logs.
+%
+%  HOW TO USE
+%  ----------
+%  * Standalone build: this file compiles on its own (pdflatex twice to
+%    resolve references and the embedded bibliography).
+%  * Integration into your thesis: delete the lines between the two
+%    "STANDALONE WRAPPER" markers (the \documentclass...\begin{document}
+%    block and the matching \end{document}), keep everything from
+%    "\chapter{...}" to the end of the thebibliography environment, and
+%    move the \bibitem entries into your global bibliography (.bib).
+% =====================================================================
+
+% --------------------- STANDALONE WRAPPER (begin) --------------------
+\documentclass[12pt,a4paper]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{textcomp}
+
+% Roman-numeral enumerated lists used for the "scientific" listings.
+\newlist{romanlist}{enumerate}{1}
+\setlist[romanlist]{label=(\roman*), leftmargin=2.2em, itemsep=2pt}
+
+\begin{document}
+% ---------------------- STANDALONE WRAPPER (end) ---------------------
+
+\chapter{Background and Related Work}
+\label{chap:background}
+
+This chapter establishes the context, motivation, and the core knowledge
+that the thesis relies upon. Section~\ref{sec:scope} first delimits the
+scope of the web intrusion detection problem that the system targets: its
+input data, its expected output, and the classes of attacks that fall
+inside and outside the processing boundary. Section~\ref{sec:related}
+then surveys representative studies that address attack detection on the
+same HTTP dataset, analysing their strengths and weaknesses in order to
+expose the research gap and the motivation behind this work. The
+remaining sections present the foundational knowledge most tightly
+connected to the system: the notion of an intrusion detection system and
+its two detection paradigms (Section~\ref{sec:ids}), common web
+application attacks (Section~\ref{sec:webattacks}), signature-based
+detection with regular expressions (Section~\ref{sec:signature}),
+supervised machine learning for classification (Section~\ref{sec:sup}),
+unsupervised anomaly detection following the one-class learning principle
+(Section~\ref{sec:unsup}), and finally the feature extraction technique
+together with the evaluation metrics used throughout the thesis
+(Section~\ref{sec:features}). These topics are the direct basis for the
+three-tier hybrid architecture realised in the subsequent chapters.
+
+% =====================================================================
+\section{Scope of Research}
+\label{sec:scope}
+
+This thesis focuses on the problem of \emph{web intrusion detection} at
+the application layer through the analysis of access logs produced by a
+web server. The task is framed as a binary classification problem: for
+every recorded HTTP/HTTPS request, the system must decide whether the
+request is \emph{benign} (clean) or an \emph{attack}, and it must
+additionally rank the severity of each alert so that a security analyst
+can prioritise the investigation.
+
+Regarding the input data, the system operates directly on the widely used
+Apache log formats, namely the Combined Log Format and the Common Log
+Format. Each log line carries fields such as the source IP address, the
+timestamp, the request line (method, URL, and protocol version), the
+returned status code, the \texttt{Referer} header, and the
+\texttt{User-Agent} header. During implementation, the log parsing module
+(\texttt{parse\_log\_entry} in \texttt{apache\_log.py}) decomposes the
+request line into method, path, query string, and parameters, and it
+iteratively URL-decodes the request to recover the original payload before
+feeding it to the detection tiers. A noteworthy characteristic is that the
+body of \texttt{POST} requests is also preserved and appended to the URL
+as a \texttt{POST\_BODY} parameter, so that parameter-analysis techniques
+apply to attacks delivered through the request body and not merely through
+the query string.
+
+Regarding the output, for every log line the system produces a structured
+record (in JSON Lines format) containing the \texttt{is\_attack} verdict,
+an aggregated threat score, a severity level (\textsc{critical},
+\textsc{high}, \textsc{medium}, \textsc{low}), and the list of detection
+tiers that fired. The alerts are aggregated into a visual dashboard and a
+live alert file for real-time monitoring.
+
+The classes of attacks addressed by the thesis are application-layer web
+attacks that manifest directly in the content of the HTTP request.
+Specifically, the system targets the following attack groups:
+
+\begin{romanlist}
+  \item SQL Injection;
+  \item Cross-Site Scripting (XSS);
+  \item Path Traversal and Local File Inclusion;
+  \item Operating-system Command Injection;
+  \item Remote File Inclusion;
+  \item Access to sensitive configuration or backup files;
+  \item Use of automated scanning tools identified through the
+        \texttt{User-Agent} header;
+  \item Parameter Tampering and HTTP Method Tampering.
+\end{romanlist}
+
+Conversely, several topics lie outside the scope of this thesis. The
+system does not handle network- or transport-layer attacks such as
+volumetric distributed denial of service, it does not perform packet-level
+decryption of TLS traffic (it works on logs already decrypted by the
+server), and it does not assume the blocking role of a Web Application
+Firewall. The emphasis of the thesis is on \emph{detection} and
+\emph{alerting}, which form the prerequisite for subsequent response
+measures.
+
+For training and evaluation, the thesis builds a balanced dataset of
+$111{,}065$ log lines, of which one half is attack traffic and the other
+half is benign traffic. This dataset combines three sources: the standard
+HTTP DATASET CSIC 2010~\cite{csic2010}, real attack samples extracted from
+the open-source PayloadsAllTheThings repository, and synthetic traffic
+generated automatically to increase the diversity of encoding variants.
+Choosing CSIC 2010 as the backbone of the dataset allows the results of
+this thesis to be compared directly with the related studies presented in
+the next section, since that dataset is also the one used by most of those
+studies.
+
+% =====================================================================
+\section{Related Work}
+\label{sec:related}
+
+Enhancing intrusion detection with machine learning has been studied
+extensively. This section reviews representative studies that operate on
+the HTTP CSIC 2010 dataset, analyses the strengths and weaknesses of each
+approach, and thereby identifies the gap that this thesis aims to fill.
+
+\subsection{Comparing machine learning algorithms on CSIC 2010
+(Pham et al., 2016)}
+
+Pham, Hoang, and Vu~\cite{pham2016} surveyed and compared five machine
+learning algorithms---Random Forest, Logistic Regression, Decision Tree,
+AdaBoost, and Stochastic Gradient Descent---on the CSIC 2010 dataset. The
+strength of their approach lies in the feature extraction step applied to
+the raw text of the HTTP request: the authors combine three techniques,
+namely tokenizing, occurrence counting, and re-weighting by the inverse
+document frequency (TF--IDF), producing a sparse matrix as input to the
+classifier. The experimental results show that Logistic Regression
+achieved the best performance, with an F1 score of about $96.11\%$ for the
+attack class; after tuning the inverse regularisation strength (choosing
+$C = 13.0$) together with recursive feature elimination (retaining
+$77{,}558$ features), the precision and recall were further improved.
+
+Nevertheless, this approach exhibits several limitations. First, the
+bag-of-words representation with tens of thousands of features depends
+heavily on the vocabulary learned from the training set, which makes the
+model bulky and prone to losing validity when faced with traffic from a
+different web application that uses a different vocabulary. Second, this is
+a purely \emph{single-model supervised} approach that requires fully
+labelled data and, by nature, only learns the characteristics of attacks
+already seen; the authors themselves acknowledge in their conclusion that
+evaluation on unseen attacks remains open. Third, the study is conducted
+in batch mode on a pre-processed dataset and does not address operation
+directly on server logs in real time.
+
+\subsection{Analysing HTTP requests with structural features
+(Althubiti et al., 2017)}
+
+Althubiti, Yuan, and Esterline~\cite{althubiti2017} also classify HTTP
+requests on CSIC 2010, but under a different feature philosophy. Instead of
+a text representation, the authors use nine \emph{structural}, numeric
+features proposed by Nguyen et al.~\cite{nguyen2011}, such as the length of
+the request, the length of the argument section, the number of arguments,
+the length of the path, and the number of special characters in the path.
+They employ the Weka toolkit with the \texttt{WrapperSubsetEval} attribute
+evaluator (using the J48 classifier and ten-fold cross-validation) combined
+with the \texttt{BestFirst} search strategy to select the five best
+features. On this compact feature set, most algorithms (Random Forest,
+Logistic Regression, J48, AdaBoost, SGD) achieve a very high detection
+rate of approximately $99.9\%$, with only Na\"{\i}ve Bayes performing
+markedly worse (around $88\%$).
+
+The advantage of this work is a lightweight numeric feature set that is
+easy to compute, fast to train, and highly accurate; feature selection
+further reduces the training time while improving the results. However,
+the near-perfect detection figures also raise questions about
+generalisation when the training and test data share the same
+distribution, and the study remains entirely within the supervised
+paradigm with no mechanism for novel attacks. Moreover, although features
+based purely on length and counts are sensitive to buffer-overflow
+attacks, they may miss attacks that are semantically sophisticated yet not
+anomalous in length.
+
+\subsection{Comparing seven algorithms and a voting classifier
+(Rawashdeh, 2023)}
+
+Rawashdeh~\cite{rawashdeh2023} extends the comparison to seven
+algorithms---Decision Tree, Random Forest, Gradient Boosting, XGBoost,
+AdaBoost, Multilayer Perceptron, and a Voting Classifier---on the Kaggle
+edition of CSIC 2010 ($61{,}065$ samples, $16$ features corresponding to
+HTTP header fields). The non-numeric features are converted to numeric
+form through Label Encoding. The results show that the Voting Classifier
+and the Decision Tree deliver the best performance, with an accuracy of
+about $89\%$. A notable contribution of this work is its demonstration of
+the benefit of \emph{ensemble} learning through a voting mechanism, in
+which the final label is decided by the majority vote of the component
+classifiers.
+
+The limitation of the study is that its overall accuracy ($\approx 89\%$)
+is lower than that of the two works above, partly because label-encoding
+categorical attributes does not preserve the semantics of the HTTP
+content. Furthermore, although a voting mechanism is used, all components
+are supervised models, so the system still inherits the common drawback of
+being unable to detect attack types lying outside the training
+distribution.
+
+\subsection{Deep learning and one-class approaches on the same dataset}
+
+Beyond classical classifiers, several studies surveyed
+in~\cite{rawashdeh2023} apply deep learning to CSIC 2010. Kim et
+al.~\cite{kim2020} combine a Convolutional Neural Network with a Long
+Short-Term Memory network (CNN with LSTM) and reach an accuracy of about
+$91.54\%$. Of particular relevance to this thesis, Vartouni et
+al.~\cite{vartouni2018} use a Stacked Auto-Encoder---a reconstruction-based
+model with an \emph{anomaly detection} flavour---and obtain an accuracy of
+about $88.32\%$. Betarte et al.~\cite{betarte2018} compare Random Forest,
+K-Nearest Neighbours, and Support Vector Machine, with Random Forest
+performing best in that group. These works reveal two trends: on the one
+hand, complex deep models do not necessarily outperform compact structural
+classifiers on CSIC 2010; on the other hand, the reconstruction-based
+anomaly direction opens up the possibility of detecting novel attacks
+without requiring attack labels during training.
+
+\subsection{Synthesis and research motivation}
+
+Table~\ref{tab:related} summarises the representative studies just
+reviewed, contrasting them along the criteria of dataset, method, approach,
+and main limitation. Several important commonalities emerge from this
+table.
+
+\begin{table}[ht]
+  \centering
+  \caption{Summary of related work on web attack detection over CSIC 2010.}
+  \label{tab:related}
+  \renewcommand{\arraystretch}{1.45}
+  \setlength{\tabcolsep}{8pt}
+  \footnotesize
+  \begin{tabular}{|p{2.3cm}|p{1.9cm}|p{3.0cm}|p{1.9cm}|p{2.8cm}|}
+    \hline
+    \textbf{Study} & \textbf{Dataset} & \textbf{Representative method} &
+    \textbf{Approach} & \textbf{Main limitation} \\
+    \hline
+    Pham et al., 2016 & CSIC 2010 &
+    LR, RF, DT, AdaBoost, SGD on TF--IDF features &
+    Supervised, single model &
+    Bulky features, no novel-attack handling \\
+    \hline
+    Nguyen et al., 2011 & CSIC 2010, ECML/PKDD &
+    GeFS feature selection (CFS, mRMR) & Supervised &
+    Hand-crafted structural features \\
+    \hline
+    Althubiti et al., 2017 & CSIC 2010 &
+    RF, LR, J48, AdaBoost, SGD, NB on 5 features &
+    Supervised & Near-perfect scores, generalisation doubts \\
+    \hline
+    Rawashdeh, 2023 & CSIC 2010 (Kaggle) &
+    DT, RF, GB, XGB, AdaBoost, MLP, Voting & Supervised ensemble &
+    Accuracy $\sim$89\%, label encoding loses semantics \\
+    \hline
+    Kim et al., 2020 & CSIC 2010 & CNN + LSTM, DNN &
+    Supervised deep learning & Complex, needs much labelled data \\
+    \hline
+    Vartouni et al., 2018 & CSIC 2010 &
+    Stacked Auto-Encoder & Anomaly detection &
+    Accuracy $\sim$88\%, recall threshold-dependent \\
+    \hline
+  \end{tabular}
+\end{table}
+
+First, the vast majority of studies adopt a \emph{single} approach,
+either purely supervised learning or purely anomaly detection. The
+supervised direction yields high accuracy on known attacks but requires
+labelled data and is weak against entirely new attacks. The anomaly
+direction has the potential to catch previously unseen attacks but
+typically suffers from a high false-alarm rate and poor stability across
+algorithms. Second, most studies work on offline pre-processed feature
+sets; few systems operate directly on raw server logs and handle practical
+situations such as multi-layer encoded payloads or attacks delivered
+through the \texttt{POST} body. Third, the signature-based detection
+layer---which has very high precision and good explainability---is often
+ignored or kept separate from the machine learning models rather than
+combined in a systematic way.
+
+These observations are precisely the motivation of this thesis. The
+system's own experiments confirm the complementarity of the approaches:
+the signature tier reaches a precision of $99.61\%$ but a recall of only
+$24.07\%$ (missing most attacks), whereas the unsupervised anomaly models
+attain high recall but widely varying precision across algorithms.
+Therefore, the thesis proposes a \emph{three-tier hybrid} architecture
+that simultaneously combines (i) signature- and rule-based detection,
+(ii) supervised learning with Random Forest, and (iii) unsupervised
+anomaly detection following the one-class learning principle. A smart
+consensus decision mechanism lets the supervised tier validate the
+detections of the anomaly tier, thereby exploiting the high recall of
+anomaly detection while keeping false alarms under control. This is the
+core difference between this thesis and the surveyed studies.
+
+% =====================================================================
+\section{Intrusion Detection Systems}
+\label{sec:ids}
+
+An Intrusion Detection System (IDS) is a security component whose task is
+to monitor the events occurring in a computer system or network and to
+analyse them for signs of intrusive behaviour~\cite{tsai2009}. According to
+the monitoring scope, an IDS is usually divided into a Network-based IDS,
+which monitors traffic crossing the network, and a Host-based IDS, which
+monitors activity on a specific machine. This thesis belongs to the web
+application intrusion detection category, a specialised form that operates
+on the application-layer logs of a web server.
+
+According to the detection method, the classical literature distinguishes
+two main paradigms, summarised by Althubiti et al.~\cite{althubiti2017} as
+follows. The first paradigm is \emph{misuse detection}, also called
+signature-based detection, which operates by matching the current activity
+against known attack patterns, usually through pattern-matching
+algorithms. Its advantage is high accuracy and few false alarms for known
+attacks, but its inherent drawback is the inability to detect new attacks
+that are absent from the signature set. The second paradigm is
+\emph{anomaly detection}, which studies the behaviour of the user or the
+system in order to build a model of ``normal'' behaviour, then treats
+significant deviations from this model as anomalies; this direction is
+typically based on machine learning techniques and is able to detect new
+attacks, at the cost of potentially generating more false alarms.
+
+These two paradigms are clearly complementary: misuse detection is strong
+in precision while anomaly detection is strong in covering unknown
+situations. This observation is the theoretical foundation for the hybrid
+architecture of the thesis, in which the signature tier
+(Section~\ref{sec:signature}) represents misuse detection and the
+unsupervised tier (Section~\ref{sec:unsup}) represents anomaly detection;
+the supervised tier (Section~\ref{sec:sup}) plays an intermediary role,
+both generalising from known attacks and providing a confidence
+probability that reconciles the two paradigms.
+
+% =====================================================================
+\section{Common Web Application Attacks}
+\label{sec:webattacks}
+
+To design appropriate detection rules and features, it is necessary to
+understand the nature of the web attacks that the system targets. Most of
+these attacks appear in the list of the ten most critical web application
+security risks published by the OWASP project~\cite{owasp2021}. In the
+OWASP Top 10 of 2021, the ``Injection'' group ranks at position A03 and
+includes several sub-types such as SQL injection, operating-system command
+injection, and cross-site scripting~\cite{owasp2021}. The attack types
+directly relevant to the thesis are presented below.
+
+\begin{romanlist}
+  \item \textbf{SQL Injection.} The attack occurs when untrusted data is
+        sent to an interpreter as part of a database query~\cite{pham2016}.
+        By inserting clauses such as \texttt{UNION SELECT}, \texttt{OR
+        '1'='1}, or statement terminators, the attacker can trick the
+        interpreter into executing unintended operations and thus access or
+        modify data without authorisation.
+
+  \item \textbf{Cross-Site Scripting (XSS).} An XSS flaw appears when an
+        application takes untrusted data and sends it to a browser without
+        proper validation or escaping~\cite{pham2016}. The attacker can
+        then execute script code in the victim's browser to hijack the
+        session, deface the page, or redirect the user to a malicious site.
+
+  \item \textbf{Path Traversal and Local File Inclusion.} The attacker
+        exploits the \texttt{../} sequence to escape the intended directory
+        and access sensitive system files such as \texttt{/etc/passwd} or
+        \texttt{win.ini}.
+
+  \item \textbf{Command Injection.} The attack allows the execution of
+        arbitrary operating-system commands through command-chaining
+        characters (\texttt{;}, \texttt{|}, \texttt{\&\&}, the backtick)
+        placed before dangerous commands such as \texttt{rm}, \texttt{cat},
+        \texttt{wget}, or \texttt{bash}.
+
+  \item \textbf{Remote File Inclusion.} An attack in which a parameter
+        value is a remote URL (starting with \texttt{http://},
+        \texttt{https://}, or \texttt{ftp://}), aiming to force the server
+        to load and execute code from an external source.
+
+  \item \textbf{Sensitive file access, parameter tampering, and method
+        tampering.} Sensitive file access is an attempt to read
+        configuration or backup files such as \texttt{.env},
+        \texttt{wp-config.php}, or \texttt{.sql}. Parameter tampering is the
+        modification of a parameter name relative to the legitimate names an
+        endpoint usually accepts, for example changing \texttt{modo} to
+        \texttt{modoA}. HTTP Method Tampering is the use of unusual methods
+        such as \texttt{PUT}, \texttt{DELETE}, or \texttt{TRACE} on
+        endpoints that normally serve only \texttt{GET}/\texttt{POST}.
+\end{romanlist}
+
+Enumerating these attack classes helps the reader grasp the scope of the
+problem; how each one is actually detected---through dedicated regular
+expressions and rules---is detailed in the next chapter.
+
+% =====================================================================
+\section{Signature-Based Detection with Regular Expressions}
+\label{sec:signature}
+
+Signature-based detection is the technique of matching the content of a
+request against a set of known attack patterns. In the thesis, these
+patterns are expressed as \emph{regular expressions} (regex)---a formal
+language that allows a compact description of sets of character strings.
+Each attack group in Section~\ref{sec:webattacks} corresponds to a
+pre-compiled regular expression, for example \texttt{SQLI\_RE} for SQL
+injection or \texttt{XSS\_RE} for cross-site scripting. When a request is
+loaded, the \texttt{detect\_rule\_based} function applies these expressions
+to the payload in turn and returns the list of rules that fired.
+
+An important challenge for signature-based detection is the \emph{encoding
+evasion} technique, in which attackers encode the URL in several layers to
+hide the payload, so that matching on the raw string fails. To overcome
+this, the system iteratively URL-decodes the request up to three times (the
+\texttt{multi\_decode} function and the decoding loop in
+\texttt{detect\_rule\_based}) to recover the original payload---for
+instance the tautology \texttt{'OR'a'='a}---before matching it against the
+rules.
+
+The advantage of the signature tier is its very high precision and its
+transparent explainability: every alert explicitly indicates which rule
+fired, helping the analyst quickly verify it. However, as noted, the
+inherent weakness of this direction is low recall---it catches only what
+has been explicitly described in the rule set. The thesis's experimental
+results reflect exactly this property, with a precision of $99.61\%$ but a
+recall of only $24.07\%$. This is precisely why the signature tier must be
+complemented by the machine learning tiers in the following sections.
+
+% =====================================================================
+\section{Supervised Machine Learning for Attack Classification}
+\label{sec:sup}
+
+Supervised learning is an approach in which the model learns from a
+labelled dataset, each sample consisting of a feature vector and a class
+label (here, \emph{attack} or \emph{benign}), in order to build a function
+that maps features to labels and predict for new data~\cite{pham2016}. The
+thesis uses supervised learning as the second detection tier, with two
+algorithms implemented in \texttt{supervised\_detector.py}: Random Forest
+(serving as the primary model) and Logistic Regression (serving as a
+comparison baseline).
+
+\subsection{Random Forest}
+
+The Random Forest, proposed by Breiman in 2001~\cite{breiman2001}, is an
+ensemble learning method that adds randomness to the bagging technique.
+Each decision tree in the forest is built from a different bootstrap sample
+of the data; moreover, at each node, instead of selecting the best split
+over all attributes, the algorithm considers only a randomly chosen subset
+of attributes~\cite{pham2016}. This strategy, although seemingly
+counter-intuitive, helps the random forest achieve high performance and
+robustness against overfitting. For a classification task, the final result
+is the class voted for by the most trees.
+
+In the thesis, the Random Forest is configured with $200$ trees and
+balanced class weights (\texttt{class\_weight="balanced"}); being
+threshold-based, it requires no feature scaling. Crucially, besides the
+predicted label it also returns the \emph{probability} of the attack class
+through \texttt{predict\_proba}. This probability is pivotal for the smart
+consensus mechanism, letting the supervised tier validate the unsupervised
+tier's detections at different confidence levels rather than issuing a hard
+decision. In experiments the Random Forest attains an F1 score of about
+$94.78\%$, the best single model in the system.
+
+\subsection{Logistic Regression}
+
+Logistic Regression is a linear classifier that estimates the probability
+of a sample belonging to a class as a smooth function of the input
+features~\cite{pham2016}, trained by maximum likelihood. Pham et
+al.~\cite{pham2016} note that it suits binary classification well and has
+low variance, so it is less prone to overfitting. In the thesis it serves
+as a backup and reference model; being scale-sensitive, it is applied with
+a feature-scaling step (\texttt{StandardScaler}), unlike the Random Forest.
+Its F1 score is about $79.99\%$, lower than the Random Forest, consistent
+with a linear model's difficulty in capturing the non-linear interactions
+among the $22$ features.
+
+An important commonality of both supervised models in the thesis is that
+they use the \emph{same 22-feature space} as the unsupervised tier
+(Section~\ref{sec:features}). Consequently, the performance difference
+between the two tiers reflects the genuine ``labelled versus unlabelled''
+distinction rather than being confounded by differences in feature
+representation.
+
+% =====================================================================
+\section{Unsupervised Anomaly Detection via One-Class Learning}
+\label{sec:unsup}
+
+The third detection tier of the thesis follows the unsupervised direction
+in order to catch new attacks that the supervised tier has never learned.
+The core principle here is \emph{one-class learning}: the model is trained
+only on ``normal'' data to learn the distribution of clean traffic, then
+treats any significant deviation from that distribution as an anomaly, that
+is, an attack~\cite{scholkopf1999}. This approach requires no attack labels
+during training, which fits the reality that attack traffic is both rare
+and difficult to collect comprehensively.
+
+An important methodological point that the thesis strictly observes is to
+\emph{train the third tier only on clean data} ($34{,}941$ benign log
+lines), rather than on a mixture of attack and benign traffic. Experiments
+show that with incorrect training (on a mixture containing $50\%$ attacks),
+the F1 score of the models reaches only about $33\%$; with correct training
+following the one-class principle on clean data, the F1 score rises sharply,
+for example the Local Outlier Factor model attains $91.57\%$. This
+improvement confirms that one-class learning is not merely a technical
+choice but a precondition for the unsupervised tier to function correctly.
+The thesis implements three complementary algorithms, described below.
+
+\subsection{Local Outlier Factor (LOF)}
+
+The Local Outlier Factor, proposed by Breunig et al. in
+2000~\cite{breunig2000}, is an outlier-detection algorithm based on
+\emph{local density}. For each data point, LOF estimates the local density
+from the distances to its $k$ nearest neighbours, then compares the density
+of that point with the density of its neighbours. A point lying in a region
+markedly sparser than its neighbourhood receives a high LOF score and is
+treated as an outlier. The ``local'' nature of the algorithm enables it to
+detect subtle anomalies sitting between regions of different density, which
+methods based on a global threshold tend to miss. In the thesis, LOF is
+configured with \texttt{n\_neighbors = 20} and the novelty-detection mode
+(\texttt{novelty = True}) so that it can predict on unseen data. It is the
+best-performing unsupervised model, with a precision of $88.28\%$ and a
+recall of $95.13\%$, and is therefore chosen as the default third tier of
+the system.
+
+\subsection{Isolation Forest}
+
+The Isolation Forest, proposed by Liu, Ting, and Zhou in
+2008~\cite{liu2008}, approaches the problem from a different angle: instead
+of profiling the normal points, the algorithm directly \emph{isolates} the
+anomalous points. The idea rests on two properties of outliers: they are
+the minority and they have attribute values markedly different from the
+bulk of the data. By recursively and randomly partitioning the feature
+space, anomalous points tend to be isolated after fewer splits,
+corresponding to a smaller average depth in the tree. The advantage of the
+Isolation Forest is its high speed and low memory demand thanks to its use
+of sampling. In the thesis, this model attains high recall ($93.14\%$) but
+a lower precision than LOF ($63.02\%$), so it serves as a comparison model
+rather than the operational choice.
+
+\subsection{One-Class SVM}
+
+The One-Class SVM, proposed by Sch\"{o}lkopf et al.~\cite{scholkopf1999},
+extends the support vector machine to the novelty-detection problem. The
+algorithm learns a boundary enclosing the region of normal data in the
+feature space; points falling outside this boundary are considered
+anomalous. By using a kernel function---typically the radial basis function
+(RBF) kernel as in the thesis---the One-Class SVM can describe complex
+non-linear boundaries. Because the algorithm is sensitive to feature scale,
+the thesis applies a scaling step before training. The model attains a
+recall of $91.38\%$ but a precision of only $62.27\%$, similar to the
+Isolation Forest, reinforcing the conclusion that among the three one-class
+algorithms, LOF is the most suitable for the HTTP log data of this problem.
+
+% =====================================================================
+\section{Feature Extraction and Evaluation Metrics}
+\label{sec:features}
+
+\subsection{Feature extraction from HTTP requests}
+
+Because machine learning algorithms require numeric input, an essential
+step is to transform each HTTP request into a feature vector. The thesis
+does not use a bulky bag-of-words representation as in~\cite{pham2016} but
+instead designs a compact $22$-dimensional vector that is shared by both
+the supervised and the unsupervised tiers. Conceptually, these features
+fall into three groups: structural features (length, path depth, parameter
+count, and similar size measures), randomness-and-encoding features (the
+Shannon entropy of the decoded payload and the number of encoding layers,
+which expose obfuscation and evasion), and semantic-and-contextual features
+(the signature score, the risk-keyword density, the suspicion of the
+\texttt{User-Agent} and \texttt{Referer} headers, and the per-endpoint
+unknown-parameter ratio). Using a shared feature space ensures consistency
+and enables a fair comparison between the approaches, while keeping the
+model compact and largely independent of the vocabulary of any specific
+application. The precise composition of the vector and the extraction
+procedure are presented in the next chapter.
+
+\subsection{Evaluation metrics}
+
+The performance of a detection system is usually assessed through the
+confusion matrix, which comprises four quantities: the number of true
+positives (TP, attacks detected correctly), true negatives (TN, clean
+traffic recognised correctly), false positives (FP, clean traffic wrongly
+flagged as an attack), and false negatives (FN, attacks that are missed).
+From these four quantities, the thesis uses the following standard metrics,
+defined consistently with Althubiti et al.~\cite{althubiti2017}.
+
+\emph{Precision} is the proportion of attack predictions that are actually
+correct, reflecting how ``clean'' the alerts are:
+\begin{equation}
+  \text{Precision} = \frac{TP}{TP + FP}.
+  \label{eq:precision}
+\end{equation}
+
+\emph{Recall} is the proportion of actual attacks that the system catches,
+reflecting the degree of missed detections:
+\begin{equation}
+  \text{Recall} = \frac{TP}{TP + FN}.
+  \label{eq:recall}
+\end{equation}
+
+The \emph{F1 score} is the harmonic mean of precision and recall, providing
+a single number that balances the two aspects:
+\begin{equation}
+  F_1 = \frac{2 \times \text{Precision} \times \text{Recall}}
+             {\text{Precision} + \text{Recall}}.
+  \label{eq:f1}
+\end{equation}
+
+In addition, the thesis emphasises the \emph{F2 score} as a metric
+particularly suited to the intrusion detection problem:
+\begin{equation}
+  F_2 = \frac{5 \times \text{Precision} \times \text{Recall}}
+             {4 \times \text{Precision} + \text{Recall}}.
+  \label{eq:f2}
+\end{equation}
+
+The F2 score is a variant of the F-score family in which recall is weighted
+twice as heavily as precision. This choice stems from the security context:
+missing an attack (a false negative) may lead to a serious data breach,
+whereas a false alarm (a false positive) costs the analyst only a few
+minutes of investigation. Therefore, in the IDS context, prioritising
+recall is reasonable, and the F2 score reflects that priority better than
+the F1 score. The \texttt{\_safe\_metrics} function in
+\texttt{apache\_log.py} computes all of the above metrics simultaneously for
+every model configuration, forming the basis for the comparison table and
+the evaluation charts in the subsequent chapters.
+
+% =====================================================================
+\section{Chapter Summary}
+\label{sec:ch2summary}
+
+This chapter has established the full foundation for moving on to the
+design and implementation of the system. Section~\ref{sec:scope} delimited
+the problem: detecting application-layer web attacks from Apache logs, with
+a concrete catalogue of in-scope attack classes and a set of deliberately
+excluded limitations. Section~\ref{sec:related} surveyed and critically
+analysed a range of representative studies on the CSIC 2010 dataset,
+showing that most research pursues a single approach and rarely combines
+signature-based detection with machine learning; this gap is precisely the
+motivation for the three-tier hybrid architecture of the thesis.
+Sections~\ref{sec:ids} through~\ref{sec:features} presented the
+foundational knowledge tightly bound to the system: the notion of an IDS
+and its two detection paradigms, web attack types according to OWASP, the
+regular-expression-based signature technique together with its
+anti-evasion decoding mechanism, supervised learning algorithms (Random
+Forest, Logistic Regression) and unsupervised one-class learning algorithms
+(LOF, Isolation Forest, One-Class SVM), as well as the shared $22$-feature
+extraction and the evaluation metrics centred on the F2 score. On the basis
+of this knowledge and analysis, the next chapter will present the detailed
+design of the three-tier architecture together with the smart consensus
+decision mechanism, turning the theoretical principles laid out here into a
+complete detection system.
+
+% =====================================================================
+% BIBLIOGRAPHY
+% Move these \bibitem entries into your global .bib / thebibliography and
+% renumber to stay consistent with the rest of the thesis.
+% =====================================================================
+\begin{thebibliography}{99}
+
+\bibitem{pham2016}
+T.~S. Pham, T.~H. Hoang, and V.~C. Vu,
+``Machine learning techniques for web intrusion detection -- a comparison,''
+in \emph{Proc. 8th Int. Conf. on Knowledge and Systems Engineering (KSE)},
+IEEE, 2016, pp. 291--297.
+
+\bibitem{althubiti2017}
+S.~Althubiti, X.~Yuan, and A.~Esterline,
+``Analyzing HTTP requests for web intrusion detection,''
+in \emph{KSU Proc. on Cybersecurity Education, Research and Practice}, 2017.
+
+\bibitem{nguyen2011}
+H.~T. Nguyen et al.,
+``Application of the generic feature selection measure in detection of web
+attacks,''
+in \emph{Computational Intelligence in Security for Information Systems}.
+Berlin: Springer, 2011, pp. 25--32.
+
+\bibitem{csic2010}
+C.~T. Gim\'{e}nez, A.~P. Villegas, and G.~\'{A}. Mara\~{n}\'{o}n,
+``HTTP Dataset CSIC 2010,''
+CSIC (Spanish Research National Council), 2010. [Online]. Available:
+\url{http://www.isi.csic.es/dataset/}
+
+\bibitem{rawashdeh2023}
+S.~Rawashdeh,
+``Cybersecurity in machine learning techniques: Detecting network attacks,''
+\emph{Acta Scientific Computer Sciences}, vol.~5, no.~11, pp. 21--29, 2023.
+
+\bibitem{kim2020}
+A.~Kim et al.,
+``AI-IDS: Application of deep learning to real-time web intrusion
+detection,''
+\emph{IEEE Access}, vol.~8, pp. 70245--70261, 2020.
+
+\bibitem{vartouni2018}
+A.~M. Vartouni et al.,
+``An anomaly detection method to detect web attacks using stacked
+auto-encoder,''
+in \emph{6th Iranian Joint Congress on Fuzzy and Intelligent Systems
+(CFIS)}, 2018, pp. 131--134.
+
+\bibitem{betarte2018}
+G.~Betarte et al.,
+``Web application attacks detection using machine learning techniques,''
+in \emph{17th IEEE Int. Conf. on Machine Learning and Applications
+(ICMLA)}, 2018, pp. 1065--1072.
+
+\bibitem{tsai2009}
+C.-F. Tsai, Y.-F. Hsu, C.-Y. Lin, and W.-Y. Lin,
+``Intrusion detection by machine learning: A review,''
+\emph{Expert Systems with Applications}, vol.~36, no.~10,
+pp. 11994--12000, 2009.
+
+\bibitem{owasp2021}
+OWASP Foundation,
+``OWASP Top 10:2021 -- A03:2021 Injection,'' 2021. [Online]. Available:
+\url{https://owasp.org/Top10/2021/}
+
+\bibitem{breiman2001}
+L.~Breiman,
+``Random forests,''
+\emph{Machine Learning}, vol.~45, no.~1, pp. 5--32, 2001.
+
+\bibitem{scholkopf1999}
+B.~Sch\"{o}lkopf, J.~C. Platt, J.~Shawe-Taylor, A.~J. Smola, and
+R.~C. Williamson,
+``Estimating the support of a high-dimensional distribution
+(support vector method for novelty detection),''
+\emph{Neural Computation}, vol.~13, no.~7, pp. 1443--1471, 1999.
+
+\bibitem{breunig2000}
+M.~M. Breunig, H.-P. Kriegel, R.~T. Ng, and J.~Sander,
+``LOF: Identifying density-based local outliers,''
+in \emph{Proc. 2000 ACM SIGMOD Int. Conf. on Management of Data},
+Dallas, TX, 2000, pp. 93--104.
+
+\bibitem{liu2008}
+F.~T. Liu, K.~M. Ting, and Z.-H. Zhou,
+``Isolation forest,''
+in \emph{Proc. 8th IEEE Int. Conf. on Data Mining (ICDM)}, 2008,
+pp. 413--422.
+
+\end{thebibliography}
+
+% --------------------- STANDALONE WRAPPER (begin) --------------------
+\end{document}
+% ---------------------- STANDALONE WRAPPER (end) ---------------------

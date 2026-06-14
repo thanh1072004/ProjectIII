@@ -1,0 +1,539 @@
+% =====================================================================
+%  CHAPTER 3 — PROPOSED SOLUTION (SYSTEM DESIGN AND ALGORITHMS)
+%  Graduation thesis: A hybrid (signature + AI) web intrusion detection
+%  system operating on Apache HTTP/HTTPS access logs.
+%
+%  NOTE ON FIGURES / ALGORITHMS / FORMULAS
+%  ---------------------------------------
+%  To keep this file compilable with only basic LaTeX packages, the flow
+%  diagram, the six algorithms, and the formulas are NOT typeset here.
+%  Instead, each one is given as a detailed "design specification" block
+%  (clearly marked) describing exactly what the figure / pseudocode /
+%  equation should contain, so it can be produced by the author or a
+%  designer and then dropped in. Search this file for the marker
+%  "[[DESIGN SPEC" to find every place that needs an artifact.
+%
+%  HOW TO USE
+%  ----------
+%  * Standalone build: compiles on its own (run pdflatex twice for refs).
+%    As a standalone document the chapter is numbered 1; inside the thesis
+%    it becomes Chapter 3 automatically.
+%  * Integration: delete the two "STANDALONE WRAPPER" blocks and keep the
+%    content from "\chapter{...}" onward.
+% =====================================================================
+
+% --------------------- STANDALONE WRAPPER (begin) --------------------
+\documentclass[12pt,a4paper]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{textcomp}
+
+\newlist{romanlist}{enumerate}{1}
+\setlist[romanlist]{label=(\roman*), leftmargin=2.2em, itemsep=2pt}
+
+% A lightweight, dependency-free box used to hold a "design specification"
+% (the description of a figure/algorithm/formula to be produced later).
+\newenvironment{designspec}[1]
+  {\par\medskip\noindent\begin{tabular}{@{}p{0.97\textwidth}@{}}\hline
+   \textbf{[[DESIGN SPEC]] #1}\\\hline\end{tabular}\par\nopagebreak\smallskip\itshape}
+  {\par\medskip}
+
+\begin{document}
+% ---------------------- STANDALONE WRAPPER (end) ---------------------
+
+\chapter{Proposed Solution}
+\label{chap:solution}
+
+While Chapter~\ref{chap:background} established the problem context and the
+theoretical building blocks, this chapter describes the proposed solution
+in detail. Section~\ref{sec:overview} gives a bird's-eye view of the entire
+processing pipeline, accompanied by a flow diagram, so that the reader can
+grasp how a raw log line is transformed into a security verdict. The
+subsequent sections then zoom into each stage of the pipeline. First,
+Section~\ref{sec:pipeline-feat} describes request parsing and the
+extraction of the shared $22$-feature vector. The three detection tiers are
+then presented one by one: the signature- and rule-based tier
+(Section~\ref{sec:tier1}), the supervised Random Forest tier
+(Section~\ref{sec:tier2}), and the unsupervised one-class anomaly tier
+(Section~\ref{sec:tier3}). Finally, Section~\ref{sec:consensus} explains the
+smart hybrid consensus and the threat-scoring scheme that fuse the three
+tiers into a single, explainable decision. For each stage, a step-by-step
+description of the underlying procedure complements---but does not
+replace---the narrative explanation.
+
+% =====================================================================
+\section{Overview}
+\label{sec:overview}
+
+The proposed system is a \emph{three-tier hybrid} web intrusion detection
+pipeline that consumes Apache access logs and emits, for every request, a
+binary verdict (attack or clean), a continuous threat score, and a severity
+label. The design principle is to combine three detection paradigms that
+have complementary strengths and weaknesses, as motivated in
+Section~\ref{sec:related}: a high-precision signature tier, a
+high-accuracy supervised tier, and a high-recall unsupervised tier capable
+of flagging previously unseen attacks. A consensus mechanism then reconciles
+the three opinions so that the final decision inherits the recall of anomaly
+detection while retaining the precision of the supervised model.
+
+Figure~\ref{fig:pipeline} depicts the end-to-end flow of the solution. The
+processing of a single log line proceeds through the following main steps,
+which correspond directly to the boxes in the diagram:
+
+\begin{romanlist}
+  \item \textbf{Parsing and decoding.} Each log line is parsed into its
+        constituent fields and its URL is iteratively decoded to undo
+        multi-layer encoding.
+  \item \textbf{Feature extraction.} The parsed request is turned into a
+        $22$-dimensional numeric feature vector shared by the two machine
+        learning tiers.
+  \item \textbf{Whitelist filtering.} Requests for harmless static
+        resources (images, stylesheets, scripts) are recognised and exempted
+        from the machine learning tiers to reduce noise.
+  \item \textbf{Three-tier detection.} The request is evaluated in parallel
+        by Tier~1 (signature and rules), Tier~2 (Random Forest probability),
+        and Tier~3 (one-class anomaly model).
+  \item \textbf{Consensus and scoring.} The three tier outputs are fused by
+        the smart consensus rule into a verdict, and a weighted threat score
+        assigns a severity level.
+  \item \textbf{Alerting.} The structured result is written to disk in JSON
+        Lines format and surfaced on a real-time dashboard.
+\end{romanlist}
+
+\begin{figure}[ht]
+  \centering
+  \fbox{\begin{minipage}{0.92\textwidth}
+    \small
+    \textbf{Diagram to be produced.} A top-to-bottom flowchart with a
+    parallel branch in the middle. The recommended layout is:
+    \begin{itemize}[leftmargin=1.4em, itemsep=1pt]
+      \item \emph{Top (input):} a parallelogram (data node) labelled
+            ``Apache access log (one line per request)''.
+      \item A downward arrow to a rectangle ``Parse \& decode URL''.
+      \item A downward arrow to a rectangle ``22-feature extraction''.
+      \item A downward arrow to a rectangle ``Static-resource whitelist
+            filter''.
+      \item From this rectangle, \emph{three arrows fan out in parallel} to
+            three side-by-side boxes: ``Tier~1: Signature + rules'',
+            ``Tier~2: Random Forest ($p_{\text{attack}}$)'', and
+            ``Tier~3: One-class LOF''.
+      \item The three boxes \emph{converge} with three arrows into a diamond
+            (decision node) labelled ``Smart consensus''.
+      \item A downward arrow to a rectangle ``Threat score \& severity
+            bucket''.
+      \item A downward arrow to a parallelogram (output) ``Alert +
+            dashboard (JSONL)''.
+    \end{itemize}
+    Suggested styling: rounded rectangles for processing steps,
+    parallelograms for input/output, a diamond for the consensus decision,
+    and a light grey fill for the three tier boxes to emphasise the parallel
+    stage.
+  \end{minipage}}
+  \caption{End-to-end processing flow of the proposed three-tier hybrid
+           web intrusion detection system.}
+  \label{fig:pipeline}
+\end{figure}
+
+The overall scanning procedure, implemented in the function
+\texttt{analyze\_log}, formalises this flow. It iterates over the log lines,
+applies the parsing and feature steps, evaluates the three tiers (subject to
+the whitelist exemption), and then delegates the final verdict to the
+consensus and scoring procedure detailed in Section~\ref{sec:consensus}.
+Concretely, the procedure carries out the following steps for the input log
+file:
+
+\begin{enumerate}[leftmargin=1.8em, itemsep=2pt]
+  \item For each log line, parse the line into its fields and produce the
+        decoded URL.
+  \item Extract the $22$-dimensional feature vector from the parsed request.
+  \item If the request is whitelisted (a static asset, or a request with
+        status code $408$), skip the two learning tiers and treat their
+        outputs as ``not fired''; otherwise continue.
+  \item Evaluate Tier~1 to obtain the set of fired rule identifiers.
+  \item Evaluate Tier~2 to obtain the Random Forest attack probability $p$.
+  \item Evaluate Tier~3 to obtain the one-class anomaly flag $a$.
+  \item Call the consensus procedure with the rule set, $p$, and $a$ to
+        obtain the verdict, the threat score, and the severity level.
+  \item Write the structured record (verdict, score, severity, contributing
+        tiers) to the output file.
+\end{enumerate}
+
+In addition to the per-request analysis, the system performs a lightweight
+behavioural pass after the loop. It tracks, for every source IP address, the
+set of distinct paths requested; an IP that touches at least ten distinct
+paths is flagged as a probable directory or port scanner. This complements
+the content-based tiers with a simple traffic-pattern heuristic. The same
+pipeline is reused unchanged in the real-time monitoring mode, where log
+lines are read from standard input and alerts are streamed to the dashboard
+as they occur.
+
+% =====================================================================
+\section{Request Parsing and Feature Extraction}
+\label{sec:pipeline-feat}
+
+\subsection{Parsing and multi-layer URL decoding}
+
+The first stage converts a raw Apache log line into a normalised structure
+used by every downstream component. The function \texttt{parse\_log\_entry}
+relies on a log parser configured for the Combined Log Format, with a
+fallback to the Common Log Format for lines that lack the
+\texttt{Referer}/\texttt{User-Agent} headers. From the request line it
+extracts the HTTP method, the raw URL, and the protocol; it then URL-decodes
+the URL and splits it into a path, a query string, and a dictionary of
+parameters. The status code, the \texttt{User-Agent}, and the
+\texttt{Referer} headers are also retained, since they feed several
+features described below. The result is a record with the fields
+\texttt{path}, \texttt{query}, \texttt{method}, \texttt{status},
+\texttt{user\_agent}, and \texttt{referer}, which constitutes the common
+input contract for all three tiers.
+
+A subtle but important detail is the handling of encoded payloads. As
+discussed in Section~\ref{sec:signature}, attackers hide malicious content
+behind several layers of URL encoding. The helper \texttt{multi\_decode}
+therefore decodes the URL repeatedly, up to three iterations, stopping early
+when a further decoding leaves the string unchanged. This recovers the
+original payload and, as a by-product, yields the \emph{encoding depth}
+(the number of layers that were actually peeled off), which is itself an
+informative feature.
+
+\subsection{The shared 22-feature vector}
+
+Both machine learning tiers operate on the same $22$-dimensional feature
+vector, produced by \texttt{extract\_features}. Sharing a single feature
+space guarantees that the performance gap between the supervised and
+unsupervised tiers reflects the ``labelled versus unlabelled'' distinction
+alone, rather than any difference in representation. The features fall into
+three conceptual groups, summarised in Table~\ref{tab:features}.
+
+\begin{table}[ht]
+  \centering
+  \caption{The three groups of the 22-dimensional feature vector.}
+  \label{tab:features}
+  \renewcommand{\arraystretch}{1.4}
+  \setlength{\tabcolsep}{8pt}
+  \footnotesize
+  \begin{tabular}{|p{3.0cm}|p{1.6cm}|p{8.0cm}|}
+    \hline
+    \textbf{Group} & \textbf{Count} & \textbf{Representative features} \\
+    \hline
+    Structural & 9 & URL length, path depth, POST flag, parameter count,
+    risky-character ratio, raw risk count, request entropy \\
+    \hline
+    Randomness \& encoding & 5 & decoded-URL entropy, maximum parameter-value
+    entropy, encoding depth, consecutive-encoding intensity, longest
+    parameter value \\
+    \hline
+    Semantic \& contextual & 8 & signature score, risk-keyword density,
+    suspicious \texttt{User-Agent} score, \texttt{Referer} suspicion,
+    method--path combo risk, path special-character count, status-code
+    indicator, unknown-parameter ratio \\
+    \hline
+  \end{tabular}
+\end{table}
+
+The structural group captures coarse anomalies in the size and shape of the
+request. The randomness-and-encoding group quantifies obfuscation through,
+among others, the Shannon entropy of the request string. For a string $s$,
+the Shannon entropy is
+\begin{equation}
+  H(s) = -\sum_{c \in \Sigma} \frac{n_c}{|s|}\,\log_2 \frac{n_c}{|s|},
+  \label{eq:entropy}
+\end{equation}
+where $\Sigma$ is the set of distinct characters that occur in $s$, $n_c$ is
+the number of occurrences of character $c$, and $|s|$ is the total length of
+$s$; the ratio $n_c/|s|$ is therefore the relative frequency of character
+$c$. A payload that has been encoded or randomised spreads its characters
+more uniformly and so attains a higher entropy, which makes
+Equation~\eqref{eq:entropy} a compact, signature-independent signal of
+obfuscation.
+
+The semantic-and-contextual group encodes domain knowledge: the
+\emph{signature score} counts how many of the attack regular expressions
+match the decoded payload, the \emph{risk-keyword density} is the fraction
+of word tokens that belong to a curated set of dangerous keywords (such as
+\texttt{select}, \texttt{union}, \texttt{script}, or \texttt{etc/passwd}),
+and the \emph{unknown-parameter ratio} measures how many parameter names on
+the request were never observed on that endpoint during training.
+
+The extraction procedure first decodes the URL to obtain a canonical payload
+and the encoding depth, then computes the three groups of features and
+concatenates them into a single vector. The procedure is deterministic and
+stateless except for the per-path vocabulary, which is learned once at
+training time and consulted by the unknown-parameter-ratio feature. Its
+steps are:
+
+\begin{enumerate}[leftmargin=1.8em, itemsep=2pt]
+  \item Concatenate the path and query string into the full URL.
+  \item Decode the full URL up to three times to recover the payload and to
+        record the encoding depth.
+  \item Compute the structural features (length, path depth, POST flag,
+        parameter count, risky-character ratio, and so on).
+  \item Compute the randomness-and-encoding features (decoded-URL entropy,
+        maximum parameter-value entropy, encoding depth, and
+        consecutive-encoding intensity).
+  \item Compute the semantic-and-contextual features (signature score,
+        risk-keyword density, header-suspicion scores, and the
+        unknown-parameter ratio against the learned vocabulary).
+  \item Concatenate the three groups into the final $22$-dimensional vector
+        and return it.
+\end{enumerate}
+
+% =====================================================================
+\section{Tier 1 --- Signature- and Rule-Based Detection}
+\label{sec:tier1}
+
+The first tier implements the misuse-detection paradigm. It is always
+active, requires no training data, and is the most trusted signal in the
+system because of its very high precision. Conceptually, the tier applies a
+battery of pattern matchers to the decoded payload and reports which, if
+any, attack rule fired. The matchers cover the attack classes enumerated in
+Section~\ref{sec:webattacks}: SQL injection, cross-site scripting, path
+traversal and local file inclusion, command injection, remote file
+inclusion, sensitive-file access, scanner user agents, HTTP method
+tampering, and parameter tampering.
+
+The crucial first step of the procedure is defensive decoding: the payload
+is decoded up to three times \emph{before} any regular expression is
+applied, so that multi-layer encoded attacks such as a triple-encoded SQL
+tautology are normalised back to their canonical form and can be matched.
+Two of the rules are stateful and depend on the per-path vocabulary learned
+during training. The method-tampering rule fires when an unusual HTTP method
+(\texttt{PUT}, \texttt{DELETE}, \texttt{PATCH}, \texttt{TRACE},
+\texttt{CONNECT}) is used on a non-API endpoint. The parameter-tampering
+rule fires when a request carries a parameter name that was never seen on
+that exact path during training, which is the mechanism that catches CSIC's
+frequent name-mutation attacks (for example
+\texttt{modo}~$\rightarrow$~\texttt{modoA}). The rule-evaluation procedure
+proceeds as follows:
+
+\begin{enumerate}[leftmargin=1.8em, itemsep=2pt]
+  \item Initialise an empty set of fired rule identifiers.
+  \item Form the candidate string by joining the path and the query string.
+  \item Decode the candidate string up to three times, stopping early if a
+        decoding leaves it unchanged.
+  \item Apply each signature matcher (SQL injection, XSS, LFI/path
+        traversal, command injection, remote file inclusion, sensitive-file
+        access, scanner user agent) to the decoded string; for every match,
+        add the corresponding identifier to the set.
+  \item Apply the method-tampering rule; if it fires, add its identifier.
+  \item Apply the parameter-tampering rule against the per-path vocabulary;
+        if it fires, add its identifier.
+  \item Return the set of fired rule identifiers.
+\end{enumerate}
+
+As established experimentally in Section~\ref{sec:signature}, this tier
+attains a precision of $99.61\%$ but a recall of only $24.07\%$. In other
+words, when it fires it is almost always correct, but it stays silent on the
+majority of attacks. This profile makes it ideal as a high-confidence
+trigger within the consensus rule, but unsuitable as a standalone detector,
+which is the very reason the two learning tiers are introduced next.
+
+% =====================================================================
+\section{Tier 2 --- Supervised Detection with Random Forest}
+\label{sec:tier2}
+
+The second tier is a supervised classifier that learns attack patterns from
+labelled data. As justified in Section~\ref{sec:sup}, the Random Forest is
+chosen as the primary model because of its robustness, its tolerance of
+unscaled heterogeneous features, and its ability to output a calibrated
+attack probability. The classifier is configured with $200$ trees and
+balanced class weights and is trained on the labelled portion of the dataset
+using the same $22$-feature vector as the other tiers.
+
+Training comprises three conceptual steps. First, the per-path parameter
+vocabulary is built from the training logs so that the
+unknown-parameter-ratio feature is meaningful. Second, every labelled
+request is converted into a feature vector. Third, the Random Forest is
+fitted to the feature--label pairs. In detail:
+
+\begin{enumerate}[leftmargin=1.8em, itemsep=2pt]
+  \item Build the per-path parameter vocabulary from all training requests.
+  \item Extract the $22$-feature vector for every labelled request, forming
+        the feature matrix.
+  \item Instantiate a Random Forest with $200$ trees and balanced class
+        weights.
+  \item Fit the Random Forest to the feature matrix and the binary labels
+        ($1$ for attack, $0$ for benign).
+  \item Persist the trained model together with the vocabulary.
+\end{enumerate}
+
+At inference time the model is queried for the probability
+$p_{\text{attack}}$ that a request is malicious; the binary Tier~2 hit is
+defined as $p_{\text{attack}} \geq 0.5$. Crucially, the consensus rule
+(Section~\ref{sec:consensus}) consumes the continuous probability rather
+than the thresholded decision, which lets it validate weaker anomaly signals
+at a lower probability cut-off. On the evaluation set this tier attains a
+precision of $94.80\%$, a recall of $94.76\%$, and an F1 score of $94.78\%$,
+the highest of any single model in the system. It therefore acts as the
+backbone of the hybrid: it both contributes a strong independent verdict and
+serves as the arbiter that confirms or rejects the anomaly tier's findings.
+Its inherent limitation, shared by all supervised methods, is that it can
+only generalise from attack families present in the training data---hence
+the need for the third tier.
+
+% =====================================================================
+\section{Tier 3 --- Unsupervised One-Class Anomaly Detection}
+\label{sec:tier3}
+
+The third tier addresses the blind spot of supervised learning by detecting
+deviations from normal traffic without ever being shown an attack. As
+explained in Section~\ref{sec:unsup}, it follows the one-class learning
+principle: the model is trained \emph{exclusively on clean traffic}
+($34{,}941$ benign log lines) so that it learns the distribution of normal
+requests, and at inference any request that falls outside that distribution
+is flagged as anomalous. Three algorithms were implemented---Local Outlier
+Factor, Isolation Forest, and One-Class SVM---among which the Local Outlier
+Factor was selected as the operational model owing to its superior
+precision--recall balance.
+
+Unlike the supervised tier, the training consumes no labels: the input is a
+corpus of attack-free requests. The features are extracted with the shared
+extractor, standardised so that distance-based density estimation is not
+dominated by high-magnitude features, and then passed to the one-class
+estimator. For the Local Outlier Factor the estimator is configured with
+twenty neighbours and in novelty mode, which allows it to score requests
+that were not part of the training corpus. The training steps are:
+
+\begin{enumerate}[leftmargin=1.8em, itemsep=2pt]
+  \item Build the per-path parameter vocabulary from the clean requests.
+  \item Extract the $22$-feature vector for every clean request, forming the
+        feature matrix.
+  \item Fit a standardisation transform on the feature matrix and apply it
+        so that all features share a comparable scale.
+  \item Instantiate the Local Outlier Factor with twenty neighbours in
+        novelty-detection mode.
+  \item Fit the model on the standardised clean features so that it learns
+        the ``normal'' manifold.
+  \item Persist the model, the standardisation transform, and the
+        vocabulary.
+\end{enumerate}
+
+At inference the estimator returns an outlier indicator ($-1$ for an
+outlier, $+1$ for an inlier); the tier reports an anomaly precisely when the
+output is $-1$. The decisive role of the clean-only training discipline is
+best illustrated by the experimental contrast: when the same model is
+mistakenly trained on a $50/50$ mixture of attack and clean traffic, its F1
+score collapses to about $33\%$, because the ``normal'' manifold becomes
+polluted with attack points and the notion of an outlier loses meaning.
+Trained correctly on clean data, the Local Outlier Factor reaches a
+precision of $88.28\%$ and a recall of $95.13\%$ (F1 $=91.57\%$). The high
+recall is exactly the property the hybrid needs from this tier: it catches
+attacks the supervised model misses, at the cost of a higher false-positive
+rate that the consensus rule is designed to suppress.
+
+% =====================================================================
+\section{Smart Hybrid Consensus and Threat Scoring}
+\label{sec:consensus}
+
+The final stage fuses the three tier outputs into a single decision. A naive
+fusion would simply raise an alert whenever any tier fires (a logical OR);
+however, because the Local Outlier Factor alone produces a non-negligible
+number of false positives, such a rule would inflate the false-alarm rate.
+The proposed \emph{smart consensus} instead lets the two high-precision
+signals fire on their own, while treating the anomaly tier as a tripwire
+that must be corroborated by the supervised model before it is trusted. Let
+$R$ denote the set of Tier~1 rules that fired, $p$ the Random Forest attack
+probability, and $a \in \{\text{true},\text{false}\}$ the Tier~3 anomaly
+flag. A request is classified as an attack when
+\begin{equation}
+  \mathrm{attack} \;=\; (R \neq \emptyset) \;\lor\; (p \geq 0.5) \;\lor\;
+  (a \,\land\, p \geq 0.3).
+  \label{eq:consensus}
+\end{equation}
+The three disjuncts of Equation~\eqref{eq:consensus} encode three
+independent ways to raise an alert. The first, $R \neq \emptyset$, fires when
+any signature matched. The second, $p \geq 0.5$, fires when the Random Forest
+is confident on its own. The third, $a \land p \geq 0.3$, is the key idea: a
+Tier~3 anomaly is trusted only when the Random Forest is at least mildly
+suspicious ($p \geq 0.3$), so an isolated anomaly that the Random Forest
+flatly rejects ($p < 0.3$) is not alerted, which is what suppresses the
+anomaly tier's false positives.
+
+Independently of the binary verdict, the system assigns a continuous threat
+score that drives the severity ranking shown to the analyst. The score
+aggregates the three signals with weights reflecting their trustworthiness:
+\begin{equation}
+  \mathrm{score} \;=\; 0.45\,[\,R \neq \emptyset\,] \;+\;
+  0.40\,p\,[\,p \geq 0.5\,] \;+\; 0.20\,[\,a\,],
+  \label{eq:score}
+\end{equation}
+where the Iverson bracket $[\,\cdot\,]$ equals $1$ when its condition holds
+and $0$ otherwise. The signature tier therefore contributes a fixed $0.45$
+(the largest weight, as the most trusted signal), the supervised tier
+contributes $0.40$ scaled by its own confidence $p$, and the anomaly tier
+contributes a fixed $0.20$. The score is finally mapped to a severity level
+by
+\begin{equation}
+  \mathrm{level} =
+  \begin{cases}
+    \textsc{critical} & \text{if } \mathrm{score} \geq 0.75,\\
+    \textsc{high}     & \text{if } 0.45 \leq \mathrm{score} < 0.75,\\
+    \textsc{medium}   & \text{if } 0.25 \leq \mathrm{score} < 0.45,\\
+    \textsc{low}      & \text{if } \mathrm{score} < 0.25 \text{ and the verdict is an attack},\\
+    \textsc{clean}    & \text{if the verdict is not an attack.}
+  \end{cases}
+  \label{eq:severity}
+\end{equation}
+
+Combining Equations~\eqref{eq:consensus} and~\eqref{eq:score} with the
+severity mapping of Equation~\eqref{eq:severity}, the decision procedure
+invoked for every request performs the following steps:
+
+\begin{enumerate}[leftmargin=1.8em, itemsep=2pt]
+  \item Initialise the threat score to zero.
+  \item Add $0.45$ if any Tier~1 rule fired.
+  \item Add $0.40 \times p$ if the Random Forest probability $p$ is at least
+        $0.5$.
+  \item Add $0.20$ if the Tier~3 anomaly flag is set.
+  \item Compute the verdict using the smart consensus rule of
+        Equation~\eqref{eq:consensus}.
+  \item If the verdict is ``not an attack'', set the severity to
+        \textsc{clean}; otherwise map the score to \textsc{critical},
+        \textsc{high}, \textsc{medium}, or \textsc{low} using the thresholds
+        of Equation~\eqref{eq:severity}.
+  \item Return the verdict, the threat score, and the severity level.
+\end{enumerate}
+
+A practical advantage of this design is its \emph{explainability}: because
+the verdict is a transparent combination of three named signals, every alert
+can be annotated with the tiers that contributed to it (for example
+``\texttt{REGEX(SQL\_INJECTION) + SUPERVISED(RF, p=0.98)}''), which helps the
+analyst triage quickly. As reported for the full pipeline, the smart
+consensus achieves a precision of $91.19\%$, a recall of $97.62\%$, an F1 of
+$94.30\%$, and an F2 of $96.26\%$---the highest F2 in the system, confirming
+that the fusion meets the IDS priority of minimising missed attacks while
+keeping false alarms manageable.
+
+% =====================================================================
+\section{Chapter Summary}
+\label{sec:ch3summary}
+
+This chapter has presented the proposed solution in full. Section~\ref{sec:overview}
+gave an overview of the three-tier hybrid pipeline and described its data
+flow (Figure~\ref{fig:pipeline}) together with the overall scanning
+procedure. The subsequent sections detailed each stage: request parsing with
+multi-layer decoding and the construction of the shared $22$-feature vector
+(Section~\ref{sec:pipeline-feat}); the always-on signature and rule tier with
+its defensive decoding and stateful tampering rules (Section~\ref{sec:tier1});
+the supervised Random Forest tier that supplies a calibrated attack
+probability (Section~\ref{sec:tier2}); and the unsupervised one-class anomaly
+tier trained exclusively on clean traffic (Section~\ref{sec:tier3}). Finally,
+Section~\ref{sec:consensus} introduced the smart consensus rule
+(Equation~\eqref{eq:consensus}) and the weighted threat score
+(Equation~\eqref{eq:score}), which together turn three complementary opinions
+into a single, explainable, and recall-oriented verdict. The next chapter evaluates this solution empirically, comparing the
+individual tiers and the hybrid configurations on the benchmark dataset.
+
+% --------------------- STANDALONE WRAPPER (begin) --------------------
+\end{document}
+% ---------------------- STANDALONE WRAPPER (end) ---------------------

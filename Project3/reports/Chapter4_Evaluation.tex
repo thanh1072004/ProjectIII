@@ -1,0 +1,595 @@
+% =====================================================================
+%  CHAPTER 4 — EVALUATION AND RESULTS
+%  Graduation thesis: A hybrid (signature + AI) web intrusion detection
+%  system operating on Apache HTTP/HTTPS access logs.
+%
+%  IMAGE-TO-SECTION MAP (files live in Project3/analysis/charts/)
+%  -------------------------------------------------------------
+%   Section 4.3 (individual tiers):
+%       comprehensive_metrics.png   -> Figure 4.1
+%       f1_ranking.png              -> Figure 4.2
+%   Section 4.4 (hybrid fusion):
+%       model_comparison.png        -> Figure 4.3
+%       precision_vs_recall.png     -> Figure 4.4
+%       radar_comparison.png        -> Figure 4.5
+%   Section 4.5 (error analysis):
+%       confusion_matrices.png      -> Figure 4.6
+%
+%  CONSISTENCY NOTE
+%  ----------------
+%  All figures (4.1-4.6) and headline numbers in this chapter come from the
+%  SAME primary per-sample evaluation on 28,767 log lines (13,643 attack /
+%  15,124 clean), stored in analysis/tier_and_hybrid_results.json and
+%  analysis/comprehensive_comparison.json. Figure 4.6
+%  (confusion_matrices.png) was regenerated on this 28,767-line set by
+%  scripts/generate_confusion_matrices.py, so its per-panel P/R/F1/F2 match
+%  the tables exactly.
+%
+%  PATHS: \graphicspath below assumes this .tex sits in Project3/reports/.
+%  Adjust if you move the file.
+% =====================================================================
+
+% --------------------- STANDALONE WRAPPER (begin) --------------------
+\documentclass[12pt,a4paper]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{lmodern}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage[hidelinks]{hyperref}
+\usepackage{geometry}
+\geometry{margin=1in}
+\usepackage{textcomp}
+
+\graphicspath{{../analysis/charts/}}
+
+\newlist{romanlist}{enumerate}{1}
+\setlist[romanlist]{label=(\roman*), leftmargin=2.2em, itemsep=2pt}
+
+\begin{document}
+% ---------------------- STANDALONE WRAPPER (end) ---------------------
+
+\chapter{Evaluation and Results}
+\label{chap:evaluation}
+
+Having described the proposed three-tier hybrid system in
+Chapter~\ref{chap:solution}, this chapter evaluates it empirically. The aim
+is twofold: to quantify how well each individual tier performs, and to show
+that the smart hybrid fusion improves upon every single tier on the metric
+that matters most for intrusion detection. Section~\ref{sec:eval-params}
+defines the evaluation parameters, that is, the metrics used and the
+composition of the evaluation set. Section~\ref{sec:sim-method} details the
+simulation method: the dataset preparation, the baselines selected for
+comparison and the rationale behind them, the algorithm hyperparameters, and
+the experimental procedure. The results are then reported in three parts:
+the performance of the individual detection tiers
+(Section~\ref{sec:res-individual}), the performance of the hybrid fusion
+strategies (Section~\ref{sec:res-hybrid}), and an error analysis based on
+confusion matrices (Section~\ref{sec:res-confusion}). Each result is
+presented with the corresponding tables and figures, accompanied by a
+detailed discussion that compares the methods and explains the observed
+behaviour.
+
+% =====================================================================
+\section{Evaluation Parameters}
+\label{sec:eval-params}
+
+The system performs binary classification, in which a request flagged as an
+attack is treated as the \emph{positive} class and a benign request as the
+\emph{negative} class. Its performance is therefore measured through the
+confusion matrix and the metrics derived from it. The confusion matrix, whose
+layout is shown in Table~\ref{tab:cm}, cross-tabulates the predicted class
+against the true class and yields four counts. The number of true positives
+($TP$) is the number of attacks that are correctly detected; the number of
+true negatives ($TN$) is the number of benign requests that are correctly
+passed; the number of false positives ($FP$) is the number of benign requests
+that are wrongly flagged as attacks (the \emph{false alarms}); and the number
+of false negatives ($FN$) is the number of attacks that are missed (the
+\emph{missed detections}). The two diagonal cells of the matrix therefore
+count the correct decisions, while the two off-diagonal cells count the two
+kinds of error.
+
+\begin{table}[ht]
+  \centering
+  \caption{Layout of the binary confusion matrix used in this chapter.}
+  \label{tab:cm}
+  \renewcommand{\arraystretch}{1.35}
+  \setlength{\tabcolsep}{10pt}
+  \footnotesize
+  \begin{tabular}{|l|c|c|}
+    \hline
+    & \textbf{Predicted: Attack} & \textbf{Predicted: Clean} \\
+    \hline
+    \textbf{Actual: Attack} & $TP$ (correct) & $FN$ (missed attack) \\
+    \hline
+    \textbf{Actual: Clean} & $FP$ (false alarm) & $TN$ (correct) \\
+    \hline
+  \end{tabular}
+\end{table}
+
+From these four counts, four metrics are reported for every configuration.
+\emph{Precision} is the fraction of the requests flagged as attacks that are
+genuinely attacks; it is high when there are few false alarms, and is defined
+as
+\begin{equation}
+  \text{Precision} = \frac{TP}{TP + FP}.
+  \label{eq:precision}
+\end{equation}
+\emph{Recall}, also called the detection rate or the true-positive rate, is
+the fraction of the actual attacks that the system manages to detect; it is
+high when there are few missed detections, and is defined as
+\begin{equation}
+  \text{Recall} = \frac{TP}{TP + FN}.
+  \label{eq:recall}
+\end{equation}
+For reference, \emph{accuracy} is the fraction of all decisions that are
+correct,
+\begin{equation}
+  \text{Accuracy} = \frac{TP + TN}{TP + TN + FP + FN}.
+  \label{eq:accuracy}
+\end{equation}
+Precision and recall capture complementary kinds of error and are usually in
+tension: a detector can trivially achieve perfect recall by flagging every
+request (at the cost of precision), or near-perfect precision by flagging only
+the most obvious attacks (at the cost of recall). To summarise both in a
+single number, the F-measure takes their weighted harmonic mean. The general
+$F_\beta$ score, in which the parameter $\beta$ sets how many times more
+important recall is than precision, is
+\begin{equation}
+  F_\beta = (1 + \beta^2)\,\frac{\text{Precision} \cdot \text{Recall}}
+                 {\beta^2 \cdot \text{Precision} + \text{Recall}}.
+  \label{eq:fbeta}
+\end{equation}
+Setting $\beta = 1$ weights precision and recall equally and gives the
+familiar F1 score, the plain harmonic mean,
+\begin{equation}
+  F_1 = \frac{2 \cdot \text{Precision} \cdot \text{Recall}}
+             {\text{Precision} + \text{Recall}}.
+  \label{eq:f1}
+\end{equation}
+Setting $\beta = 2$ weights recall twice as heavily as precision and gives the
+F2 score, which after substituting $\beta = 2$ into
+Equation~\ref{eq:fbeta} simplifies to
+\begin{equation}
+  F_2 = \frac{5 \cdot \text{Precision} \cdot \text{Recall}}
+             {4 \cdot \text{Precision} + \text{Recall}}.
+  \label{eq:f2}
+\end{equation}
+
+In this thesis the F2 score of Equation~\ref{eq:f2} is treated as the primary
+metric of merit. The reason is rooted in the cost asymmetry of the intrusion
+detection task: a missed attack (a false negative) may lead to a data breach
+with severe consequences, whereas a false alarm (a false positive) merely
+costs an analyst a few minutes of investigation. Because the two errors are
+not equally damaging, a metric that weights recall above precision reflects
+the operational priority better than the balanced F1 score does. Accuracy,
+defined in Equation~\ref{eq:accuracy}, is reported only for completeness and
+is not used as a headline metric, because on a near-balanced dataset it is
+less discriminative than the precision--recall family and can mask a poor
+recall.
+
+All headline numbers in this chapter are computed on a single, fixed
+evaluation set whose composition is given in Table~\ref{tab:evalset}. This
+set is the held-out $30\%$ split of the balanced corpus; after log parsing,
+$28{,}767$ lines were successfully evaluated, of which $13{,}643$ are
+attacks and $15{,}124$ are clean, giving an attack ratio of $47.43\%$.
+Because the two classes are close to balanced, both precision and recall are
+meaningful and neither is trivially inflated by class skew.
+
+\begin{table}[ht]
+  \centering
+  \caption{Composition of the primary evaluation set.}
+  \label{tab:evalset}
+  \renewcommand{\arraystretch}{1.35}
+  \setlength{\tabcolsep}{10pt}
+  \footnotesize
+  \begin{tabular}{|l|r|}
+    \hline
+    \textbf{Quantity} & \textbf{Value} \\
+    \hline
+    Evaluated log lines & 28{,}767 \\
+    \hline
+    Attack lines & 13{,}643 \\
+    \hline
+    Clean lines & 15{,}124 \\
+    \hline
+    Attack ratio & 47.43\% \\
+    \hline
+  \end{tabular}
+\end{table}
+
+% =====================================================================
+\section{Simulation Method}
+\label{sec:sim-method}
+
+\subsection{Dataset preparation}
+\label{sec:sim-data}
+
+The corpus combines three sources of HTTP traffic, as introduced in
+Section~\ref{sec:scope}: the CSIC 2010 dataset, real attack payloads from the
+PayloadsAllTheThings repository, and automatically generated synthetic
+traffic. In total it contains $111{,}065$ log lines, balanced to $50\%$
+attack and $50\%$ clean so that the learning algorithms are not biased
+towards either class. The corpus is then partitioned as follows. The
+supervised tier (Tier~2) is trained on $66{,}984$ labelled lines, of which
+$32{,}043$ are attacks and $34{,}941$ are clean. The unsupervised tier
+(Tier~3) is trained, following the one-class principle, on the
+$34{,}941$ clean lines only. The remaining held-out split forms the
+evaluation set of Table~\ref{tab:evalset}.
+
+Every line is processed by the same pipeline described in
+Chapter~\ref{chap:solution}: it is parsed, its URL is decoded over up to
+three layers, and it is converted into the shared $22$-feature vector. The
+ground-truth label of each line is obtained from a marker embedded in the
+synthetic traffic generator and the CSIC conversion, so that the evaluation
+labels are exact rather than estimated. Static-resource requests are
+whitelisted out of the learning tiers, as in production, so that the
+reported numbers reflect the system's real operating behaviour.
+
+\subsection{Baselines and rationale}
+\label{sec:sim-baselines}
+
+To place the proposed hybrid in context, it is compared against a set of
+baselines that span the design space. The baselines, and the reason each was
+chosen, are the following:
+
+\begin{romanlist}
+  \item \textbf{Tier~1 regex rules}, as a pure misuse-detection baseline.
+        It represents the classical signature approach and establishes the
+        precision ceiling and the recall floor of the system.
+  \item \textbf{Logistic Regression}, as a linear supervised baseline against
+        the non-linear Random Forest. It was chosen because it is the model
+        reported as best by Pham et al.~\cite{pham2016} on CSIC 2010, which
+        makes the comparison directly relevant to the related work.
+  \item \textbf{Isolation Forest} and \textbf{One-Class SVM}, as alternative
+        one-class anomaly detectors against the Local Outlier Factor. They
+        were chosen so that the choice of the operational Tier~3 model rests
+        on an explicit comparison rather than an assumption.
+  \item \textbf{Simple Voting} (alert if any tier fires, that is, the logical
+        OR of the three tiers), as a naive fusion baseline against the
+        proposed smart consensus. It isolates the contribution of the
+        consensus logic from the mere act of combining tiers.
+\end{romanlist}
+
+This selection lets the evaluation answer three distinct questions: which
+supervised model is best, which unsupervised model is best, and whether the
+smart consensus genuinely improves on both the single tiers and a naive
+fusion.
+
+\subsection{Algorithm hyperparameters}
+\label{sec:sim-hyper}
+
+The hyperparameters of every algorithm are fixed in advance and summarised in
+Table~\ref{tab:hyper}. The two supervised models use balanced class weights
+to counteract any residual class imbalance during fitting. The Random Forest
+and the Isolation Forest use $200$ estimators. The Local Outlier Factor uses
+twenty neighbours in novelty mode so that it can score unseen requests. The
+One-Class SVM uses a radial-basis-function kernel. The models that are
+sensitive to feature scale (Logistic Regression and One-Class SVM) are
+preceded by a standardisation step, whereas the tree-based models are not.
+Every estimator is given a fixed random seed, which makes training and
+inference deterministic.
+
+\begin{table}[ht]
+  \centering
+  \caption{Algorithm hyperparameters used in the experiments.}
+  \label{tab:hyper}
+  \renewcommand{\arraystretch}{1.35}
+  \setlength{\tabcolsep}{8pt}
+  \footnotesize
+  \begin{tabular}{|l|p{8.2cm}|}
+    \hline
+    \textbf{Model} & \textbf{Hyperparameters} \\
+    \hline
+    Random Forest (Tier 2) & 200 trees, unlimited depth, balanced class
+    weights, fixed random seed \\
+    \hline
+    Logistic Regression (Tier 2) & lbfgs solver, up to 2000 iterations,
+    balanced class weights, with feature standardisation \\
+    \hline
+    Local Outlier Factor (Tier 3) & 20 neighbours, novelty mode,
+    contamination $=0.50$, with feature standardisation \\
+    \hline
+    Isolation Forest (Tier 3) & 200 trees, contamination $=0.50$, fixed
+    random seed, with feature standardisation \\
+    \hline
+    One-Class SVM (Tier 3) & RBF kernel, $\nu = 0.60$, scale gamma, with
+    feature standardisation \\
+    \hline
+  \end{tabular}
+\end{table}
+
+\subsection{Experimental procedure}
+\label{sec:sim-procedure}
+
+The experiment evaluates each configuration on the full evaluation set by a
+single exact per-sample pass: for every one of the $28{,}767$ lines, the
+configuration's decision is computed and tallied into the confusion matrix,
+from which the four metrics are derived. Because all estimators are seeded
+and the evaluation visits every sample exactly once (rather than sampling a
+subset), the procedure is deterministic; repeating it yields identical
+numbers, so no averaging over multiple runs is required and no error bars are
+reported. In total, six single-model configurations (regex, Random Forest,
+Logistic Regression, Isolation Forest, One-Class SVM, Local Outlier Factor)
+and the hybrid fusion strategies (simple voting and the smart consensus) are
+evaluated under identical conditions, which guarantees that the comparison is
+fair and that any difference is attributable to the method rather than to the
+data or the protocol.
+
+% =====================================================================
+\section{Performance of the Individual Detection Tiers}
+\label{sec:res-individual}
+
+The first experiment measures each detector in isolation. Table~\ref{tab:individual}
+reports the four metrics for the regex baseline (Tier~1), the two supervised
+models (Tier~2), and the three one-class models (Tier~3).
+Figure~\ref{fig:metrics} visualises the same data as four grouped bar charts,
+and Figure~\ref{fig:f1rank} ranks the models by F1 score.
+
+\begin{table}[ht]
+  \centering
+  \caption{Performance of the individual detectors on the evaluation set
+           (all values in \%).}
+  \label{tab:individual}
+  \renewcommand{\arraystretch}{1.35}
+  \setlength{\tabcolsep}{9pt}
+  \footnotesize
+  \begin{tabular}{|l|l|r|r|r|r|}
+    \hline
+    \textbf{Detector} & \textbf{Type} & \textbf{Prec.} & \textbf{Recall} &
+    \textbf{F1} & \textbf{F2} \\
+    \hline
+    Regex rules (Tier 1) & Signature & 99.61 & 24.07 & 38.77 & 28.37 \\
+    \hline
+    Random Forest (Tier 2) & Supervised & 94.80 & 94.76 & \textbf{94.78} & 94.77 \\
+    \hline
+    Logistic Regression (Tier 2) & Supervised & 85.82 & 74.90 & 79.99 & 76.86 \\
+    \hline
+    Isolation Forest (Tier 3) & Unsupervised & 63.02 & 93.14 & 75.17 & 85.01 \\
+    \hline
+    One-Class SVM (Tier 3) & Unsupervised & 62.27 & 91.38 & 74.07 & 83.57 \\
+    \hline
+    Local Outlier Factor (Tier 3) & Unsupervised & 88.28 & 95.13 & \textbf{91.57} & 93.67 \\
+    \hline
+  \end{tabular}
+\end{table}
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{comprehensive_metrics.png}
+  \caption{Precision, recall, F1, and F2 of every model, shown as four
+           grouped bar charts. Green bars are supervised models, blue bars
+           are unsupervised models, and red bars are the hybrid
+           configurations (discussed in Section~\ref{sec:res-hybrid}).}
+  \label{fig:metrics}
+\end{figure}
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.85\textwidth]{f1_ranking.png}
+  \caption{Ranking of the detectors by F1 score. The Random Forest leads,
+           closely followed by the smart consensus and the Local Outlier
+           Factor.}
+  \label{fig:f1rank}
+\end{figure}
+
+Several observations follow from Table~\ref{tab:individual} and
+Figures~\ref{fig:metrics} and~\ref{fig:f1rank}. First, the regex baseline
+behaves exactly as the misuse-detection paradigm predicts: its precision is
+the highest of all detectors at $99.61\%$, meaning that almost everything it
+flags is truly an attack, but its recall is only $24.07\%$, meaning it misses
+roughly three out of four attacks. Consequently its F1 ($38.77\%$) and F2
+($28.37\%$) are the lowest in the table. This confirms that a signature-only
+system, while precise, is inadequate as a standalone detector, and motivates
+the learning tiers.
+
+Second, among the supervised models the Random Forest is decisively better
+than Logistic Regression, achieving an F1 of $94.78\%$ against $79.99\%$. The
+gap is largest in recall ($94.76\%$ versus $74.90\%$), which indicates that
+the linear decision boundary of Logistic Regression cannot capture the
+non-linear interactions among the $22$ features as well as the ensemble of
+trees. This result is also consistent with, yet distinct from, Pham et
+al.~\cite{pham2016}, who found Logistic Regression best on a high-dimensional
+TF--IDF representation; on the compact $22$-feature representation used here,
+the non-linear Random Forest is clearly superior, which justifies its choice
+as the primary Tier~2 model.
+
+Third, among the one-class models the Local Outlier Factor is the clear
+winner, with an F1 of $91.57\%$ compared with $75.17\%$ for the Isolation
+Forest and $74.07\%$ for the One-Class SVM. Interestingly, all three reach a
+high recall (above $91\%$), but the Isolation Forest and the One-Class SVM
+pay for it with a low precision (around $62$--$63\%$), whereas the Local
+Outlier Factor keeps precision high at $88.28\%$. The reason is that the
+density-based, locally adaptive criterion of the Local Outlier Factor draws a
+tighter boundary around the normal manifold than the global partitioning of
+the Isolation Forest or the single margin of the One-Class SVM, so it admits
+far fewer clean requests as false anomalies. This is precisely why the Local
+Outlier Factor was selected as the operational Tier~3 model.
+
+% =====================================================================
+\section{Performance of the Hybrid Fusion Strategies}
+\label{sec:res-hybrid}
+
+The second experiment evaluates whether fusing the tiers improves on the best
+single tier. Table~\ref{tab:hybrid} compares the three tiers against the two
+fusion strategies, and Figure~\ref{fig:tierhybrid} plots the same five
+configurations against a $90\%$ reference line for each metric.
+Figure~\ref{fig:pr} shows the precision--recall trade-off as a scatter plot,
+and Figure~\ref{fig:radar} overlays the three strongest configurations on a
+radar chart.
+
+\begin{table}[ht]
+  \centering
+  \caption{Tiers versus hybrid fusion strategies on the evaluation set
+           (all values in \%). The best value in each column is in bold.}
+  \label{tab:hybrid}
+  \renewcommand{\arraystretch}{1.35}
+  \setlength{\tabcolsep}{9pt}
+  \footnotesize
+  \begin{tabular}{|l|r|r|r|r|}
+    \hline
+    \textbf{Configuration} & \textbf{Prec.} & \textbf{Recall} & \textbf{F1} &
+    \textbf{F2} \\
+    \hline
+    Tier 1: Regex rules & \textbf{99.61} & 24.07 & 38.77 & 28.37 \\
+    \hline
+    Tier 2: Random Forest & 94.80 & 94.76 & \textbf{94.78} & 94.77 \\
+    \hline
+    Tier 3: Local Outlier Factor & 88.28 & 95.13 & 91.57 & 93.67 \\
+    \hline
+    Simple Voting (T1 OR T2 OR T3) & 87.78 & \textbf{97.96} & 92.59 & 95.74 \\
+    \hline
+    Smart Consensus (proposed) & 91.19 & 97.62 & 94.30 & \textbf{96.26} \\
+    \hline
+  \end{tabular}
+\end{table}
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{model_comparison.png}
+  \caption{Tier and hybrid configuration comparison across the four metrics.
+           The dashed line marks the $90\%$ reference level. Both fusion
+           strategies exceed every single tier on recall and F2.}
+  \label{fig:tierhybrid}
+\end{figure}
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.75\textwidth]{precision_vs_recall.png}
+  \caption{Precision--recall trade-off. The ideal corner is the top-right.
+           The hybrid configurations sit in the high-recall, high-precision
+           region, while the Isolation Forest and One-Class SVM occupy the
+           high-recall but low-precision region.}
+  \label{fig:pr}
+\end{figure}
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.7\textwidth]{radar_comparison.png}
+  \caption{Multi-metric radar comparison of the three strongest
+           configurations: the Random Forest, the Local Outlier Factor, and
+           the smart consensus. The smart consensus dominates on the
+           recall and F2 axes.}
+  \label{fig:radar}
+\end{figure}
+
+The central result of the thesis is visible in Table~\ref{tab:hybrid} and
+Figure~\ref{fig:tierhybrid}. The proposed smart consensus attains the highest
+F2 score of the entire system at $96.26\%$, exceeding the best single tier
+(the Random Forest at $94.77\%$) and every other configuration. It does so by
+combining a recall of $97.62\%$ with a precision of $91.19\%$: it catches
+about $98$ of every $100$ attacks while keeping roughly nine false alarms per
+hundred alerts. Compared with the Random Forest alone, the consensus trades a
+small amount of precision (from $94.80\%$ to $91.19\%$) for a substantial gain
+in recall (from $94.76\%$ to $97.62\%$); because the F2 metric rewards recall,
+this trade is favourable for an intrusion detection system, where missed
+attacks are the more dangerous error.
+
+The comparison between the two fusion strategies explains why the consensus
+logic, and not mere combination, is responsible for the gain. Simple voting,
+which raises an alert whenever any tier fires, reaches the highest recall of
+all ($97.96\%$) but its precision drops to $87.78\%$, because it inherits
+every false positive of the Local Outlier Factor. The smart consensus, by
+requiring that a Tier~3 anomaly be corroborated by at least a mild Random
+Forest suspicion before it is trusted, recovers precision to $91.19\%$ while
+sacrificing almost no recall (only $0.34$ percentage points). The net effect
+is a higher F1 ($94.30\%$ versus $92.59\%$) and a comparable F2, confirming
+that the supervised tier's validation of the anomaly tier is the key
+mechanism. The precision--recall scatter in Figure~\ref{fig:pr} makes this
+trade-off geometric: the hybrid points are pushed towards the desirable
+top-right corner, away from the low-precision cluster of the Isolation Forest
+and One-Class SVM.
+
+It is worth noting how these figures relate to the related work surveyed in
+Chapter~\ref{chap:background}. Although a direct numeric comparison is
+imperfect because the evaluation protocols and feature sets differ, the
+proposed hybrid attains a recall ($97.62\%$) that is higher than the
+attack-class recall reported by Pham et al.~\cite{pham2016} for their best
+model, while operating directly on raw logs and, unlike the purely supervised
+studies, retaining an unsupervised tier capable of flagging novel attacks.
+The contribution of this thesis is therefore not a marginal accuracy gain on
+a fixed benchmark but a fusion design that is simultaneously
+recall-oriented, robust to unseen attacks, and explainable.
+
+% =====================================================================
+\section{Error Analysis via Confusion Matrices}
+\label{sec:res-confusion}
+
+To understand \emph{where} each configuration makes mistakes, this section
+examines the confusion matrices in Figure~\ref{fig:confusion}. Each matrix
+reports, for one configuration, the four counts $TN$, $FP$, $FN$, and $TP$;
+the off-diagonal cells are the errors, with the bottom-left cell ($FN$) being
+the missed attacks and the top-right cell ($FP$) being the false alarms.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=\textwidth]{confusion_matrices.png}
+  \caption{Confusion matrices of the eight configurations on the same
+           $28{,}767$-line evaluation set. For each panel the bottom-left
+           cell counts missed attacks ($FN$) and the top-right cell counts
+           false alarms ($FP$); the two diagonal cells are correct decisions.
+           The per-panel F1 and F2 values match Tables~\ref{tab:individual}
+           and~\ref{tab:hybrid}.}
+  \label{fig:confusion}
+\end{figure}
+
+The matrices tell a consistent error story, and because they are computed on
+the same evaluation set their cell counts can be read directly. The regex-only
+panel has an almost empty false-alarm cell (only $13$ false positives) but a
+very large missed-attack cell ($10{,}359$ of the $13{,}643$ attacks missed),
+the visual signature of high precision and low recall. The Isolation Forest
+and One-Class SVM panels show the opposite imbalance: their missed-attack
+cells are small (around $900$--$1{,}200$) but their false-alarm cells are
+enormous (about $7{,}500$ clean requests wrongly flagged), reflecting their
+low precision. The Random Forest panel is well balanced, with small and almost
+equal errors on both diagonals ($715$ missed attacks and $709$ false alarms).
+
+The two right-most panels make the effect of the fusion concrete. Simple
+voting achieves the fewest missed attacks of all ($278$) but pays with
+$1{,}860$ false alarms, because it inherits every Local Outlier Factor false
+positive. The smart consensus keeps the missed-attack cell almost as low
+($325$ missed attacks, against $665$ for the Local Outlier Factor alone)
+while cutting the false alarms to $1{,}286$, well below both simple voting
+and the Local Outlier Factor's own $1{,}723$. In other words, requiring the
+Random Forest to corroborate a Tier~3 anomaly removes roughly a quarter of the
+anomaly tier's false positives at the cost of only a handful of additional
+missed attacks. This is exactly the behaviour an intrusion detection system
+should exhibit: it errs, when it must, on the side of raising an alert rather
+than letting an attack through, and the confusion matrices therefore
+corroborate the quantitative conclusion of Section~\ref{sec:res-hybrid} that
+the smart consensus offers the best recall-oriented balance.
+
+% =====================================================================
+\section{Chapter Summary}
+\label{sec:ch4summary}
+
+This chapter has evaluated the proposed system in full.
+Section~\ref{sec:eval-params} fixed the evaluation parameters: the
+precision, recall, F1, and F2 metrics, with F2 as the primary measure, on a
+balanced evaluation set of $28{,}767$ lines.
+Section~\ref{sec:sim-method} described the simulation method, including the
+dataset preparation, the choice of the regex, Logistic Regression, Isolation
+Forest, One-Class SVM, and simple-voting baselines, the fixed
+hyperparameters, and the deterministic per-sample evaluation procedure. The
+results were then reported in three parts. The individual-tier experiment
+(Section~\ref{sec:res-individual}) established the Random Forest as the best
+supervised model and the Local Outlier Factor as the best unsupervised model,
+and confirmed the high-precision, low-recall nature of the regex baseline.
+The hybrid experiment (Section~\ref{sec:res-hybrid}) showed that the proposed
+smart consensus achieves the system's best F2 score of $96.26\%$, improving on
+every single tier and on naive voting by validating anomaly detections with
+the supervised model. Finally, the error analysis
+(Section~\ref{sec:res-confusion}) confirmed, through the confusion matrices,
+that the smart consensus minimises missed attacks while keeping false alarms
+under control. Together, these results demonstrate that the three-tier hybrid
+design meets its objective of recall-oriented, robust, and explainable web
+intrusion detection. The next chapter draws conclusions and outlines
+directions for future work.
+
+% --------------------- STANDALONE WRAPPER (begin) --------------------
+\end{document}
+% ---------------------- STANDALONE WRAPPER (end) ---------------------
