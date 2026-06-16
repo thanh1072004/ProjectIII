@@ -11,6 +11,11 @@ venv/
 # Trained model artifacts — quá lớn để push, deploy bằng cách re-train hoặc transfer riêng
 trained_models/*.pkl
 
+# Thí nghiệm cross-dataset (ECML/PKDD 2007, HttpParams 2015): toàn bộ dữ liệu,
+# model .pkl và ảnh kết quả — KHÔNG push lên GitHub (build lại bằng scripts/).
+datasets/ecml/
+datasets/httpparams/
+
 # Runtime output — sinh ra mỗi lần monitor/scan
 runtime/*.jsonl
 runtime/*.log
