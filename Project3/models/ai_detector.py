@@ -327,9 +327,21 @@ class LogAnomalyDetector:
         # trained_models/ (cấu trúc mới) và root (back-compat). Khi train mới,
         # tự động tạo thư mục trained_models/ nếu chưa tồn tại.
         os.makedirs(_MODELS_DIR, exist_ok=True)
-        self.model_path  = _resolve_model_path(f"ad_model_{self.model_type}.pkl")
-        self.scaler_path = _resolve_model_path(f"ad_scaler_{self.model_type}.pkl")
-        self.vocab_path  = _resolve_model_path(f"ad_vocab_{self.model_type}.pkl")
+        # Các model unsupervised được train bởi scripts/retrain_final_all_models.py
+        # và lưu dưới tên *_final.pkl. IF train trên dữ liệu THÔ (không scaler);
+        # LOF & OCSVM dùng chung scaler_final.pkl. Không có vocab trong scheme này
+        # (feature unknown_param_ratio = 0), nên vocab_path = None.
+        _final = {
+            "if":    ("isolation_forest_final.pkl", None),
+            "ocsvm": ("ocsvm_final.pkl", "scaler_final.pkl"),
+            "lof":   ("lof_final.pkl", "scaler_final.pkl"),
+        }
+        if self.model_type not in _final:
+            raise ValueError(f"[LỖI] Không hỗ trợ model: {self.model_type}")
+        _model_file, _scaler_file = _final[self.model_type]
+        self.model_path  = _resolve_model_path(_model_file)
+        self.scaler_path = _resolve_model_path(_scaler_file) if _scaler_file else None
+        self.vocab_path  = None
 
         self.model = None
         self.scaler = StandardScaler()
@@ -512,36 +524,35 @@ class LogAnomalyDetector:
         print(f"[AI] Đã lưu model {self.model_path}, scaler {self.scaler_path}, vocab {self.vocab_path}")
 
     def load_model(self):
-        if os.path.exists(self.model_path) and os.path.exists(self.scaler_path):
-            try:
-                self.model = joblib.load(self.model_path)
-                self.scaler = joblib.load(self.scaler_path)
-                expected = len(self.FEATURE_NAMES)
-                actual = getattr(self.scaler, 'n_features_in_', expected)
-                if actual != expected:
-                    print(f"[CẢNH BÁO] Scaler kỳ vọng {actual} features nhưng code hiện sinh {expected}. "
-                          f"Vui lòng train lại model {self.model_type.upper()}.")
-                    return False
-                # Phase 3.1 (B): vocab is required for the 22nd feature.
-                if os.path.exists(self.vocab_path):
-                    self.path_param_vocab = joblib.load(self.vocab_path)
-                    print(f"[AI] Đã load model + scaler + vocab cho {self.model_type.upper()} "
-                          f"({expected} features, vocab={len(self.path_param_vocab)} paths)")
-                else:
-                    self.path_param_vocab = {}
-                    print(f"[CẢNH BÁO] Không tìm thấy {self.vocab_path}. Feature unknown_param_ratio sẽ luôn = 0. "
-                          f"Vui lòng train lại model {self.model_type.upper()}.")
-                return True
-            except Exception as e:
-                print(f"[LỖI] Lỗi khi load model: {e}")
+        if not os.path.exists(self.model_path):
+            return False
+        # IF được train trên dữ liệu thô nên không có scaler; LOF/OCSVM thì có.
+        if self.scaler_path and not os.path.exists(self.scaler_path):
+            return False
+        try:
+            self.model = joblib.load(self.model_path)
+            self.scaler = joblib.load(self.scaler_path) if self.scaler_path else None
+            expected = len(self.FEATURE_NAMES)
+            ref = self.scaler if self.scaler is not None else self.model
+            actual = getattr(ref, 'n_features_in_', expected)
+            if actual != expected:
+                print(f"[CẢNH BÁO] Model kỳ vọng {actual} features nhưng code hiện sinh {expected}. "
+                      f"Vui lòng train lại model {self.model_type.upper()}.")
                 return False
-        return False
+            # Scheme *_final.pkl không kèm vocab → feature unknown_param_ratio = 0.
+            self.path_param_vocab = {}
+            print(f"[AI] Đã load {self.model_type.upper()} ({expected} features"
+                  f"{', có scaler' if self.scaler is not None else ', không scaler (raw)'})")
+            return True
+        except Exception as e:
+            print(f"[LỖI] Lỗi khi load model: {e}")
+            return False
 
     def predict(self, path, query, method, status, user_agent="", referer=""):
-        if not self.model or not self.scaler:
+        if self.model is None:
             return False
 
         features = self.extract_features(path, query, method, status, user_agent, referer)
-        features_scaled = self.scaler.transform([features])
+        features_scaled = self.scaler.transform([features]) if self.scaler is not None else [features]
         pred = self.model.predict(features_scaled)
         return pred[0] == -1

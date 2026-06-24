@@ -1,0 +1,73 @@
+% =====================================================================
+%  glossary.tex  —  List of abbreviations for the graduation thesis
+%  "Intrusion Detection System for Web Servers Based on Log Analysis"
+%
+%  USAGE (in main.tex):
+%    \usepackage[nonumberlist, nopostdot, nogroupskip, acronym]{glossaries}
+%    \usepackage{glossary-superragged}
+%    \setglossarystyle{superraggedheaderborder}
+%    \makenoidxglossaries          % <-- REQUIRED, before \input{glossary}
+%    \input{glossary}
+%
+%  Then in the body, after the List of Tables:
+%    \glsaddall
+%    \printnoidxglossary[type=\acronymtype, title={LIST OF ABBREVIATIONS},
+%                        nonumberlist]
+%
+%  Format:  \newacronym{key}{SHORT}{Long definition}
+%           key   = internal label (used by \gls{key} in the text)
+%           SHORT = the abbreviation shown in the "Abbreviation" column
+%           Long  = the full form shown in the "Definition" column
+% =====================================================================
+
+% ---- Core system concepts -------------------------------------------
+\newacronym{ids}{IDS}{Intrusion Detection System}
+\newacronym{ips}{IPS}{Intrusion Prevention System}
+\newacronym{waf}{WAF}{Web Application Firewall}
+\newacronym{siem}{SIEM}{Security Information and Event Management}
+
+% ---- Machine-learning models ----------------------------------------
+\newacronym{ml}{ML}{Machine Learning}
+\newacronym{rf}{RF}{Random Forest}
+\newacronym{lr}{LR}{Logistic Regression}
+\newacronym{lof}{LOF}{Local Outlier Factor}
+\newacronym{if}{IF}{Isolation Forest}
+\newacronym{ocsvm}{OCSVM}{One-Class Support Vector Machine}
+
+% ---- Web protocols and formats --------------------------------------
+\newacronym{http}{HTTP}{HyperText Transfer Protocol}
+\newacronym{https}{HTTPS}{HyperText Transfer Protocol Secure}
+\newacronym{url}{URL}{Uniform Resource Locator}
+\newacronym{uri}{URI}{Uniform Resource Identifier}
+\newacronym{html}{HTML}{HyperText Markup Language}
+\newacronym{json}{JSON}{JavaScript Object Notation}
+\newacronym{csv}{CSV}{Comma-Separated Values}
+\newacronym{api}{API}{Application Programming Interface}
+
+% ---- Attack types ---------------------------------------------------
+\newacronym{sqli}{SQLi}{SQL Injection}
+\newacronym{sql}{SQL}{Structured Query Language}
+\newacronym{xss}{XSS}{Cross-Site Scripting}
+\newacronym{lfi}{LFI}{Local File Inclusion}
+\newacronym{rfi}{RFI}{Remote File Inclusion}
+\newacronym{owasp}{OWASP}{Open Worldwide Application Security Project}
+
+% ---- Datasets -------------------------------------------------------
+\newacronym{csic}{CSIC}{Spanish Research Council HTTP Dataset (CSIC 2010)}
+\newacronym{ecml}{ECML/PKDD}{European Conference on Machine Learning and
+  Principles and Practice of Knowledge Discovery in Databases}
+
+% ---- Evaluation metrics ---------------------------------------------
+\newacronym{tp}{TP}{True Positive}
+\newacronym{fp}{FP}{False Positive}
+\newacronym{tn}{TN}{True Negative}
+\newacronym{fn}{FN}{False Negative}
+\newacronym{tpr}{TPR}{True Positive Rate (Recall)}
+\newacronym{fpr}{FPR}{False Positive Rate}
+\newacronym{roc}{ROC}{Receiver Operating Characteristic}
+\newacronym{auc}{AUC}{Area Under the Curve}
+
+% ---- Deployment / infrastructure ------------------------------------
+\newacronym{keda}{KEDA}{Kubernetes Event-Driven Autoscaling}
+\newacronym{elk}{ELK}{Elasticsearch, Logstash and Kibana}
+\newacronym{cms}{CMS}{Content Management System}

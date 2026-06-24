@@ -174,8 +174,8 @@ def analyze_log(path_log, ai_engine, supervised_engine=None,
     if path_out_results is None:
         path_out_results = _runtime_path("scan_results.jsonl")
     """
-    Hai chế độ:
-      - mode="train": chỉ thu thập dữ liệu để train (ai_engine.train được gọi sau)
+    Chế độ scan: chạy đầy đủ 3-tier (regex + supervised RF + unsup LOF).
+    (Việc train model nằm ở scripts/retrain_final_all_models.py, KHÔNG ở đây.)
       - mode="scan" : chạy đầy đủ 3-tier (regex + supervised RF + unsup LOF),
                       ghi 2 file output:
                         * scan_results.jsonl : 1 dòng/log_line, có verdict + chi tiết
@@ -191,9 +191,6 @@ def analyze_log(path_log, ai_engine, supervised_engine=None,
     ip_activity = defaultdict(int)
     ip_paths = defaultdict(set)
     ip_401_counts = defaultdict(int)
-
-    # Cho mode train: chỉ thu data
-    training_data = []
 
     # Cho mode scan: lưu (line_no, parsed_data, regex_matches)
     scan_inputs = []
@@ -216,26 +213,12 @@ def analyze_log(path_log, ai_engine, supervised_engine=None,
 
             parsed_data = parse_log_entry(entry)
             training_item = build_training_item(parsed_data)
-            training_data.append(training_item)
-
-            if mode == "train":
-                continue
 
             # ===== Tier 1: Rule-based detection =====
             matches = detect_rule_based(parsed_data)
             update_behavior_stats(parsed_data, ip_activity, ip_paths, ip_401_counts)
 
             scan_inputs.append((line_no, parsed_data, training_item, matches))
-
-    # ----- mode TRAIN -----
-    if mode == "train":
-        print(f"[*] Training AI model ({ai_engine.model_type.upper()}) with {len(training_data)} entries...")
-        if os.path.exists(ai_engine.model_path):
-            os.remove(ai_engine.model_path)
-        if os.path.exists(ai_engine.scaler_path):
-            os.remove(ai_engine.scaler_path)
-        ai_engine.train(training_data)
-        return
 
     # ----- mode SCAN: chạy đầy đủ 3-tier -----
     has_unsup = ai_engine.load_model() if ai_engine else False
@@ -1233,8 +1216,9 @@ if __name__ == "__main__":
     from models.ai_detector import LogAnomalyDetector
 
     if len(sys.argv) < 3:
-        print("Usage: python apache_log.py [train|scan|monitor|evaluate] [logfile] [model_type]")
+        print("Usage: python apache_log.py [scan|monitor|evaluate] [logfile] [model_type]")
         print("model_type: if, ocsvm, lof (Mặc định: if)")
+        print("(Train model: chạy python scripts/retrain_final_all_models.py)")
         sys.exit(1)
 
     mode = sys.argv[1]
@@ -1248,18 +1232,14 @@ if __name__ == "__main__":
 
     # Phase 3.1 (B as hard rule): on scan/evaluate/monitor, load the trained
     # vocab into the module-level dict so detect_rule_based() can use it for
-    # the PARAM_TAMPERING rule. (train mode builds vocab itself.)
+    # the PARAM_TAMPERING rule.
     def _hydrate_vocab():
         global PATH_PARAM_VOCAB
         if ai_engine.path_param_vocab:
             PATH_PARAM_VOCAB = ai_engine.path_param_vocab
             print(f"[RULES] PARAM_TAMPERING rule loaded ({len(PATH_PARAM_VOCAB)} paths)")
 
-    if mode == "train":
-        # Truyền ai_engine vào hàm analyze_log
-        analyze_log(log_file, ai_engine=ai_engine, mode="train")
-
-    elif mode == "scan":
+    if mode == "scan":
         # Auto-load supervised RF nếu có để scan dùng đủ 3-tier.
         # ai_engine (unsupervised) sẽ được load bên trong analyze_log.
         if ai_engine.load_model():
@@ -1312,7 +1292,7 @@ if __name__ == "__main__":
             print(f"⚠️  Could not load supervised model: {e}")
 
         if not unsup_loaded and sup_engine is None:
-            print("[FATAL] No AI tier available. Please run train (and analysis/supervised_vs_unsupervised.py) first.")
+            print("[FATAL] No AI tier available. Please run: python scripts/retrain_final_all_models.py")
             sys.exit(1)
 
         monitor_realtime(ai_engine if unsup_loaded else None, supervised_engine=sup_engine)

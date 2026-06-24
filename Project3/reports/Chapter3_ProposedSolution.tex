@@ -37,6 +37,7 @@
 \usepackage{geometry}
 \geometry{margin=1in}
 \usepackage{textcomp}
+\emergencystretch=3em  % absorb minor overfull lines from long identifiers
 
 \newlist{romanlist}{enumerate}{1}
 \setlist[romanlist]{label=(\roman*), leftmargin=2.2em, itemsep=2pt}
@@ -54,7 +55,7 @@
 \chapter{Proposed Solution}
 \label{chap:solution}
 
-While Chapter~\ref{chap:background} established the problem context and the
+While Chapter 2 established the problem context and the
 theoretical building blocks, this chapter describes the proposed solution
 in detail. Section~\ref{sec:overview} gives a bird's-eye view of the entire
 processing pipeline, accompanied by a flow diagram, so that the reader can
@@ -80,7 +81,7 @@ pipeline that consumes Apache access logs and emits, for every request, a
 binary verdict (attack or clean), a continuous threat score, and a severity
 label. The design principle is to combine three detection paradigms that
 have complementary strengths and weaknesses, as motivated in
-Section~\ref{sec:related}: a high-precision signature tier, a
+the related-work survey of Chapter 2: a high-precision signature tier, a
 high-accuracy supervised tier, and a high-recall unsupervised tier capable
 of flagging previously unseen attacks. A consensus mechanism then reconciles
 the three opinions so that the final decision inherits the recall of anomaly
@@ -145,7 +146,7 @@ which correspond directly to the boxes in the diagram:
 \end{figure}
 
 The overall scanning procedure, implemented in the function
-\texttt{analyze\_log}, formalises this flow. It iterates over the log lines,
+``analyze\_log'', formalises this flow. It iterates over the log lines,
 applies the parsing and feature steps, evaluates the three tiers (subject to
 the whitelist exemption), and then delegates the final verdict to the
 consensus and scoring procedure detailed in Section~\ref{sec:consensus}.
@@ -184,22 +185,22 @@ as they occur.
 \subsection{Parsing and multi-layer URL decoding}
 
 The first stage converts a raw Apache log line into a normalised structure
-used by every downstream component. The function \texttt{parse\_log\_entry}
+used by every downstream component. The function ``parse\_log\_entry''
 relies on a log parser configured for the Combined Log Format, with a
 fallback to the Common Log Format for lines that lack the
-\texttt{Referer}/\texttt{User-Agent} headers. From the request line it
+``Referer''/``User-Agent'' headers. From the request line it
 extracts the HTTP method, the raw URL, and the protocol; it then URL-decodes
 the URL and splits it into a path, a query string, and a dictionary of
-parameters. The status code, the \texttt{User-Agent}, and the
-\texttt{Referer} headers are also retained, since they feed several
+parameters. The status code, the ``User-Agent'', and the
+``Referer'' headers are also retained, since they feed several
 features described below. The result is a record with the fields
-\texttt{path}, \texttt{query}, \texttt{method}, \texttt{status},
-\texttt{user\_agent}, and \texttt{referer}, which constitutes the common
+``path'', ``query'', ``method'', ``status'',
+``user\_agent'', and ``referer'', which constitutes the common
 input contract for all three tiers.
 
 A subtle but important detail is the handling of encoded payloads. As
-discussed in Section~\ref{sec:signature}, attackers hide malicious content
-behind several layers of URL encoding. The helper \texttt{multi\_decode}
+discussed in Chapter 2, attackers hide malicious content
+behind several layers of URL encoding. The helper ``multi\_decode''
 therefore decodes the URL repeatedly, up to three iterations, stopping early
 when a further decoding leaves the string unchanged. This recovers the
 original payload and, as a by-product, yields the \emph{encoding depth}
@@ -209,61 +210,85 @@ informative feature.
 \subsection{The shared 22-feature vector}
 
 Both machine learning tiers operate on the same $22$-dimensional feature
-vector, produced by \texttt{extract\_features}. Sharing a single feature
-space guarantees that the performance gap between the supervised and
+vector, produced by the ``extract\_features'' method. Sharing a single
+feature space guarantees that the performance gap between the supervised and
 unsupervised tiers reflects the ``labelled versus unlabelled'' distinction
-alone, rather than any difference in representation. The features fall into
-three conceptual groups, summarised in Table~\ref{tab:features}.
+alone, rather than any difference in representation. The twenty-two features
+fall into three conceptual groups---structural, randomness-and-encoding, and
+semantic-and-contextual---which are described feature by feature below; the
+corresponding source code is shown in Figure~\ref{fig:code-features}.
 
-\begin{table}[ht]
-  \centering
-  \caption{The three groups of the 22-dimensional feature vector.}
-  \label{tab:features}
-  \renewcommand{\arraystretch}{1.4}
-  \setlength{\tabcolsep}{8pt}
-  \footnotesize
-  \begin{tabular}{|p{3.0cm}|p{1.6cm}|p{8.0cm}|}
-    \hline
-    \textbf{Group} & \textbf{Count} & \textbf{Representative features} \\
-    \hline
-    Structural & 9 & URL length, path depth, POST flag, parameter count,
-    risky-character ratio, raw risk count, request entropy \\
-    \hline
-    Randomness \& encoding & 5 & decoded-URL entropy, maximum parameter-value
-    entropy, encoding depth, consecutive-encoding intensity, longest
-    parameter value \\
-    \hline
-    Semantic \& contextual & 8 & signature score, risk-keyword density,
-    suspicious \texttt{User-Agent} score, \texttt{Referer} suspicion,
-    method--path combo risk, path special-character count, status-code
-    indicator, unknown-parameter ratio \\
-    \hline
-  \end{tabular}
-\end{table}
-
-The structural group captures coarse anomalies in the size and shape of the
-request. The randomness-and-encoding group quantifies obfuscation through,
-among others, the Shannon entropy of the request string. For a string $s$,
-the Shannon entropy is
+\paragraph{Structural group (nine features).} This group captures the coarse
+size and shape of the request. It comprises the total URL length
+(``len\_url''), counted over the concatenated path and query; the path
+depth (``path\_depth''), the number of ``/'' separators in the
+path, which grows for deeply nested or traversal-style endpoints; a binary
+POST flag (``is\_post'') recording the request method; the parameter
+count (``param\_count''), taken as the number of ``='' signs in
+the query; the raw count of dangerous metacharacters (such as the
+semicolon, pipe, dollar sign, back-tick, parentheses, angle brackets,
+quotes, braces, and backslash) in the decoded URL
+(``raw\_risk\_count'') together with their density relative to the URL
+length (``risk\_ratio''); the number of SQL, XSS, and LFI keywords found
+in the decoded URL (``keyword\_hits''); the percent-encoding density,
+i.e. the proportion of ``\%'' characters
+(``encoding\_ratio''); and the Shannon entropy of the decoded URL
+(``entropy''). For a string $s$, the Shannon entropy is
 \begin{equation}
   H(s) = -\sum_{c \in \Sigma} \frac{n_c}{|s|}\,\log_2 \frac{n_c}{|s|},
   \label{eq:entropy}
 \end{equation}
-where $\Sigma$ is the set of distinct characters that occur in $s$, $n_c$ is
+where $\Sigma$ is the set of distinct characters occurring in $s$, $n_c$ is
 the number of occurrences of character $c$, and $|s|$ is the total length of
-$s$; the ratio $n_c/|s|$ is therefore the relative frequency of character
-$c$. A payload that has been encoded or randomised spreads its characters
-more uniformly and so attains a higher entropy, which makes
-Equation~\eqref{eq:entropy} a compact, signature-independent signal of
-obfuscation.
+$s$, so that $n_c/|s|$ is the relative frequency of $c$. A payload that has
+been encoded or randomised spreads its characters more uniformly and
+therefore attains a higher entropy, which makes Equation~\eqref{eq:entropy} a
+compact, signature-independent signal of obfuscation. Taken together, an
+over-long URL, a high risky-character density, or an abnormally high entropy
+are all hallmarks of an injection or buffer-overflow attempt.
 
-The semantic-and-contextual group encodes domain knowledge: the
-\emph{signature score} counts how many of the attack regular expressions
-match the decoded payload, the \emph{risk-keyword density} is the fraction
-of word tokens that belong to a curated set of dangerous keywords (such as
-\texttt{select}, \texttt{union}, \texttt{script}, or \texttt{etc/passwd}),
-and the \emph{unknown-parameter ratio} measures how many parameter names on
-the request were never observed on that endpoint during training.
+\paragraph{Randomness-and-encoding group (five features).} This group
+quantifies obfuscation and the multi-layer encoding evasion discussed in
+Chapter 2. It contains the maximum Shannon entropy taken over all individual
+parameter values (``param\_value\_max\_entropy''), which isolates a
+single high-entropy field even when the rest of the URL looks ordinary; the
+length of the longest parameter value (``longest\_param\_value''), which
+flags an oversized payload smuggled into one field; the encoding depth
+(``encoding\_depth''), the number of URL-decoding passes that were
+actually required (from $0$ up to $3$) before the payload stopped changing,
+which directly measures how many layers of encoding the attacker stacked; the
+consecutive-encoding intensity (``consecutive\_encoding\_intensity''),
+the fraction of the URL occupied by runs of consecutive ``\%xx''
+sequences, which is high for heavily encoded payloads; and the number of
+parameter names drawn from a curated suspicious set such as ``cmd'',
+``exec'', ``file'', or ``passwd''
+(``param\_names\_anomaly'').
+
+\paragraph{Semantic-and-contextual group (eight features).} This group
+encodes domain knowledge about how attacks differ from legitimate traffic. It
+comprises the suspicious-User-Agent score (``suspicious\_ua\_score''), a
+value in $[0,1]$ that is maximal for a known scanner string (``sqlmap'',
+``nikto'', and the like), moderate for an automated client, and high for
+a missing User-Agent; the Referer-suspicion score
+(``referer\_suspicion''), likewise in $[0,1]$, which rises when the
+Referer header itself contains attack tokens or is heavily percent-encoded;
+the status-code indicator (``status\_code\_indicator''), a small bucket
+of the HTTP response status ($0$ for 2xx, $1$ for 3xx, $2$ for 4xx, $3$ for
+5xx) that captures error-inducing requests; the signature score
+(``signature\_score''), the number of Tier-1 attack regular expressions
+(out of four) that match the decoded payload, which feeds the signature
+evidence back into the learning tiers; the risk-keyword density
+(``risk\_keyword\_density''), the fraction of word tokens that are
+dangerous keywords; the method-and-path combination risk
+(``method\_path\_combo\_risk''), which rises for sensitive paths such as
+``/admin'' or ``/login'' and for write methods such as ``PUT''
+or ``DELETE''; the count of special characters in the path itself
+(``path\_special\_chars''), which exposes traversal or injection embedded
+in the path rather than in the query; and the unknown-parameter ratio
+(``unknown\_param\_ratio''), the fraction of the request's parameter
+names that were never observed on that exact endpoint during training---the
+feature that exposes the parameter-name-mutation attacks pervasive in the
+CSIC dataset.
 
 The extraction procedure first decodes the URL to obtain a canonical payload
 and the encoding depth, then computes the three groups of features and
@@ -288,6 +313,18 @@ steps are:
         and return it.
 \end{enumerate}
 
+\begin{figure}[ht]
+  \centering
+  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.2cm}
+    \textit{[Insert a screenshot of the ``extract\_features()'' method
+    and the ``FEATURE\_NAMES'' list from ``models/ai\_detector.py''
+    here.]}\vspace{2.2cm}}}
+  % Replace the box above with: \includegraphics[width=0.9\textwidth]{code_extract_features.png}
+  \caption{Source code of the 22-feature extraction routine
+           (``extract\_features'' in ``ai\_detector.py'').}
+  \label{fig:code-features}
+\end{figure}
+
 % =====================================================================
 \section{Tier 1 --- Signature- and Rule-Based Detection}
 \label{sec:tier1}
@@ -297,10 +334,91 @@ active, requires no training data, and is the most trusted signal in the
 system because of its very high precision. Conceptually, the tier applies a
 battery of pattern matchers to the decoded payload and reports which, if
 any, attack rule fired. The matchers cover the attack classes enumerated in
-Section~\ref{sec:webattacks}: SQL injection, cross-site scripting, path
+Section~2.4 of Chapter 2: SQL injection, cross-site scripting, path
 traversal and local file inclusion, command injection, remote file
 inclusion, sensitive-file access, scanner user agents, HTTP method
 tampering, and parameter tampering.
+
+\subsection{The rule set}
+
+Each attack class is encoded as a pre-compiled, case-insensitive regular
+expression (or, for the two stateful rules, as a small procedure). The nine
+rules are summarised in Table~\ref{tab:rules}; their exact definitions in the
+source code are shown in Figure~\ref{fig:code-regex}.
+
+\begin{table}[ht]
+  \centering
+  \caption{The nine Tier~1 detection rules, their matching mechanism, and the
+           attack class each targets.}
+  \label{tab:rules}
+  \renewcommand{\arraystretch}{1.3}
+  \setlength{\tabcolsep}{5pt}
+  \footnotesize
+  \begin{tabular}{|p{3.2cm}|p{6.6cm}|p{2.6cm}|}
+    \hline
+    \textbf{Rule (identifier)} & \textbf{Matching mechanism (representative patterns)} & \textbf{Target attack} \\
+    \hline
+    \texttt{SQL\_INJECTION} & \texttt{union select}, \texttt{select \dots from}, \texttt{insert into}, \texttt{drop table}, quoted tautologies such as \texttt{'OR'a'='a}, comment markers \texttt{--}/\texttt{\#}/\texttt{/*}, \texttt{xp\_cmdshell} & SQL injection \\
+    \hline
+    \texttt{XSS} & \texttt{<script}, \texttt{javascript:}, \texttt{onerror=}, \texttt{onload=}, \texttt{eval(}, \texttt{<img src}, \texttt{alert(} & Cross-site scripting \\
+    \hline
+    \texttt{LFI\_PATH\_} \texttt{TRAVERSAL} & \texttt{../}, \texttt{..\textbackslash}, \texttt{/etc/passwd}, \texttt{/proc/self}, \texttt{C:\textbackslash Windows}, \texttt{win.ini} & Path traversal / LFI \\
+    \hline
+    \texttt{COMMAND\_} \texttt{INJECTION} & \texttt{;|\&\&\$>} before \texttt{rm}/\texttt{cat}/\texttt{wget}/\texttt{curl}/\texttt{bash}/\texttt{nc}/\dots, or back-tick command substitution & OS command injection \\
+    \hline
+    \texttt{RFI} & A parameter value beginning with \texttt{http://}, \texttt{https://}, or \texttt{ftp://} & Remote file inclusion \\
+    \hline
+    \texttt{SENSITIVE\_} \texttt{FILE\_ACCESS} & \texttt{.env}, \texttt{.git/config}, \texttt{wp-config.php}, \texttt{.bak}, \texttt{.sql}, \texttt{/cgi-bin/}, \texttt{phpinfo.php} & Config/backup file access \\
+    \hline
+    \texttt{SCANNER\_TOOL} & User-Agent matching \texttt{sqlmap}, \texttt{nikto}, \texttt{nmap}, \texttt{nessus}, \texttt{dirbuster}, \texttt{gobuster}, \texttt{acunetix}, \texttt{hydra} & Automated scanners \\
+    \hline
+    \texttt{HTTP\_METHOD\_} \texttt{TAMPERING} & An unusual method (\texttt{PUT}, \texttt{DELETE}, \texttt{PATCH}, \texttt{TRACE}, \texttt{CONNECT}) on a non-API path & Method tampering \\
+    \hline
+    \texttt{PARAM\_} \texttt{TAMPERING} & A parameter name absent from the per-path vocabulary learned during training & Parameter-name mutation \\
+    \hline
+  \end{tabular}
+\end{table}
+
+The first seven rules are purely pattern-based and stateless. Their design
+reflects a deliberate effort to balance coverage against false positives. For
+example, the SQL-injection expression was broadened beyond the classic
+``digit-equals-digit'' tautology (``1=1'') to also match the
+\emph{quoted, letter-based} tautologies such as ``'OR'a'='a'' that
+dominate the CSIC dataset, because the narrower pattern missed the majority
+of real CSIC payloads. The command-injection expression requires a
+shell metacharacter (a semicolon, pipe, double ampersand, dollar sign, or
+back-tick) \emph{immediately before} a known binary name, which keeps the
+benign word ``cat'' in a product description from triggering the rule. The
+remote-file-inclusion rule inspects parameter \emph{values} rather than the
+whole URL, so that a legitimate path containing ``http'' does not raise
+an alert.
+
+The last two rules are stateful: they consult a \emph{per-path parameter
+vocabulary} that the system learns at training time, recording for every
+endpoint the set of parameter names that ever appeared on it. The
+method-tampering rule fires when one of the methods ``PUT'',
+``DELETE'', ``PATCH'', ``TRACE'', or ``CONNECT'' is used
+on an endpoint that is not part of an API surface, since such methods are
+rarely legitimate on ordinary pages. The parameter-tampering rule fires when
+a request carries a parameter name that was never observed on that exact path
+during training; this is the mechanism that catches the frequent
+name-mutation attacks in CSIC, for example renaming ``modo'' to
+``modoA'' or ``precio'' to ``precioA''.
+
+\begin{figure}[ht]
+  \centering
+  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.2cm}
+    \textit{[Insert a screenshot of the regular-expression definitions
+    (``SQLI\_RE'', ``XSS\_RE'', ``LFI\_RE'',
+    ``CMD\_INJ\_RE'', ``SENSITIVE\_FILE\_RE'',
+    ``SCANNER\_UA\_RE'') from ``apache\_log.py'' here.]}\vspace{2.2cm}}}
+  % Replace the box above with: \includegraphics[width=0.9\textwidth]{code_regex_rules.png}
+  \caption{Source code of the Tier~1 signature regular expressions in
+           ``apache\_log.py''.}
+  \label{fig:code-regex}
+\end{figure}
+
+\subsection{Rule evaluation}
 
 The crucial first step of the procedure is defensive decoding: the payload
 is decoded up to three times \emph{before} any regular expression is
@@ -308,12 +426,12 @@ applied, so that multi-layer encoded attacks such as a triple-encoded SQL
 tautology are normalised back to their canonical form and can be matched.
 Two of the rules are stateful and depend on the per-path vocabulary learned
 during training. The method-tampering rule fires when an unusual HTTP method
-(\texttt{PUT}, \texttt{DELETE}, \texttt{PATCH}, \texttt{TRACE},
-\texttt{CONNECT}) is used on a non-API endpoint. The parameter-tampering
+(``PUT'', ``DELETE'', ``PATCH'', ``TRACE'',
+``CONNECT'') is used on a non-API endpoint. The parameter-tampering
 rule fires when a request carries a parameter name that was never seen on
 that exact path during training, which is the mechanism that catches CSIC's
 frequent name-mutation attacks (for example
-\texttt{modo}~$\rightarrow$~\texttt{modoA}). The rule-evaluation procedure
+``modo''~$\rightarrow$~``modoA''). The rule-evaluation procedure
 proceeds as follows:
 
 \begin{enumerate}[leftmargin=1.8em, itemsep=2pt]
@@ -331,7 +449,22 @@ proceeds as follows:
   \item Return the set of fired rule identifiers.
 \end{enumerate}
 
-As established experimentally in Section~\ref{sec:signature}, this tier
+Figure~\ref{fig:code-detect} shows the implementation of this procedure in
+the ``detect\_rule\_based'' function.
+
+\begin{figure}[ht]
+  \centering
+  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.0cm}
+    \textit{[Insert a screenshot of the ``detect\_rule\_based()''
+    function (and the ``multi\_decode'' loop) from
+    ``apache\_log.py'' here.]}\vspace{2.0cm}}}
+  % Replace the box above with: \includegraphics[width=0.9\textwidth]{code_detect_rule_based.png}
+  \caption{Source code of the Tier~1 rule-evaluation routine
+           (``detect\_rule\_based'' in ``apache\_log.py'').}
+  \label{fig:code-detect}
+\end{figure}
+
+As established experimentally in Chapter 2, this tier
 attains a precision of $99.61\%$ but a recall of only $24.07\%$. In other
 words, when it fires it is almost always correct, but it stays silent on the
 majority of attacks. This profile makes it ideal as a high-confidence
@@ -343,7 +476,7 @@ which is the very reason the two learning tiers are introduced next.
 \label{sec:tier2}
 
 The second tier is a supervised classifier that learns attack patterns from
-labelled data. As justified in Section~\ref{sec:sup}, the Random Forest is
+labelled data. As justified in Chapter 2, the Random Forest is
 chosen as the primary model because of its robustness, its tolerance of
 unscaled heterogeneous features, and its ability to output a calibrated
 attack probability. The classifier is configured with $200$ trees and
@@ -367,8 +500,36 @@ fitted to the feature--label pairs. In detail:
   \item Persist the trained model together with the vocabulary.
 \end{enumerate}
 
+Recalling the mathematical formulation given in Chapter 2, the Random Forest
+trains $B = 200$ decision trees, each grown on a bootstrap sample of the
+training set and splitting nodes on a random subset of the $22$ features
+using the Gini impurity $G = 1 - \sum_i p_i^2$ as the split criterion. The
+key property exploited here is that the forest produces not only a hard label
+but a calibrated probability, obtained by averaging the per-tree votes:
+\begin{equation}
+  p_{\text{attack}}(x) \;=\; \frac{1}{B}\sum_{b=1}^{B} \mathbf{1}\!\left[T_b(x) = \text{attack}\right],
+  \label{eq:rfproba}
+\end{equation}
+where $T_b(x)$ is the prediction of the $b$-th tree. This is exactly the
+quantity returned by the ``predict\_proba'' method and consumed by the
+consensus rule. Figure~\ref{fig:code-rf} shows the training and inference
+code of the supervised tier.
+
+\begin{figure}[ht]
+  \centering
+  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.0cm}
+    \textit{[Insert a screenshot of the ``train()'' and
+    ``predict\_proba()'' methods of the ``SupervisedDetector''
+    class from ``models/supervised\_detector.py'' here.]}\vspace{2.0cm}}}
+  % Replace the box above with: \includegraphics[width=0.9\textwidth]{code_supervised.png}
+  \caption{Source code of the supervised Random Forest tier
+           (``supervised\_detector.py'').}
+  \label{fig:code-rf}
+\end{figure}
+
 At inference time the model is queried for the probability
-$p_{\text{attack}}$ that a request is malicious; the binary Tier~2 hit is
+$p_{\text{attack}}$ that a request is malicious, computed by
+Equation~\eqref{eq:rfproba}; the binary Tier~2 hit is
 defined as $p_{\text{attack}} \geq 0.5$. Crucially, the consensus rule
 (Section~\ref{sec:consensus}) consumes the continuous probability rather
 than the thresholded decision, which lets it validate weaker anomaly signals
@@ -387,7 +548,7 @@ the need for the third tier.
 
 The third tier addresses the blind spot of supervised learning by detecting
 deviations from normal traffic without ever being shown an attack. As
-explained in Section~\ref{sec:unsup}, it follows the one-class learning
+explained in Chapter 2, it follows the one-class learning
 principle: the model is trained \emph{exclusively on clean traffic}
 ($34{,}941$ benign log lines) so that it learns the distribution of normal
 requests, and at inference any request that falls outside that distribution
@@ -417,6 +578,25 @@ that were not part of the training corpus. The training steps are:
   \item Persist the model, the standardisation transform, and the
         vocabulary.
 \end{enumerate}
+
+The mathematical formulation of the three one-class estimators (the local
+reachability density and Local Outlier Factor score, the isolation path
+length and anomaly score, and the One-Class SVM margin objective) was given
+in Chapter 2; Figure~\ref{fig:code-lof} shows how the chosen estimator is
+trained on clean data in the ``train'' method of the
+``LogAnomalyDetector'' class.
+
+\begin{figure}[ht]
+  \centering
+  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.0cm}
+    \textit{[Insert a screenshot of the ``train()'' method of the
+    ``LogAnomalyDetector'' class (clean-only fitting of LOF/IF/OCSVM)
+    from ``models/ai\_detector.py'' here.]}\vspace{2.0cm}}}
+  % Replace the box above with: \includegraphics[width=0.9\textwidth]{code_oneclass.png}
+  \caption{Source code of the unsupervised one-class training routine
+           (``ai\_detector.py'').}
+  \label{fig:code-lof}
+\end{figure}
 
 At inference the estimator returns an outlier indicator ($-1$ for an
 outlier, $+1$ for an inlier); the tier reports an anomaly precisely when the
@@ -504,15 +684,122 @@ invoked for every request performs the following steps:
   \item Return the verdict, the threat score, and the severity level.
 \end{enumerate}
 
+Figure~\ref{fig:code-consensus} shows the implementation of this fusion rule,
+where the boolean verdict of Equation~\eqref{eq:consensus} is computed in a
+single expression over the three tier outputs.
+
+\begin{figure}[ht]
+  \centering
+  \fbox{\parbox{0.9\textwidth}{\centering\vspace{1.8cm}
+    \textit{[Insert a screenshot of the smart-consensus decision logic
+    (the ``should\_alert''/``is\_attack'' expression and the
+    threat-score accumulation) from ``apache\_log.py'' here.]}\vspace{1.8cm}}}
+  % Replace the box above with: \includegraphics[width=0.9\textwidth]{code_consensus.png}
+  \caption{Source code of the smart hybrid consensus and threat-scoring logic
+           in ``apache\_log.py''.}
+  \label{fig:code-consensus}
+\end{figure}
+
 A practical advantage of this design is its \emph{explainability}: because
 the verdict is a transparent combination of three named signals, every alert
 can be annotated with the tiers that contributed to it (for example
-``\texttt{REGEX(SQL\_INJECTION) + SUPERVISED(RF, p=0.98)}''), which helps the
+``REGEX(SQL\_INJECTION) + SUPERVISED(RF, p=0.98)''), which helps the
 analyst triage quickly. As reported for the full pipeline, the smart
 consensus achieves a precision of $91.19\%$, a recall of $97.62\%$, an F1 of
 $94.30\%$, and an F2 of $96.26\%$---the highest F2 in the system, confirming
 that the fusion meets the IDS priority of minimising missed attacks while
 keeping false alarms manageable.
+
+% =====================================================================
+\section{Operating Modes: Static Scan and Real-time Monitoring}
+\label{sec:modes}
+
+The same three-tier pipeline described above is exposed through two
+operating modes, so that the system can be used both for the offline
+analysis of historical logs and for live protection of a running web server.
+Both modes share exactly the same parsing, feature extraction, three-tier
+evaluation, and smart-consensus decision; they differ only in how log lines
+enter the system and how the results are delivered.
+
+\subsection{Static file scan}
+
+The static-scan mode is intended for the offline, batch analysis of a log
+file that has already been collected---for example for a forensic audit of
+historical traffic or for the reproducible evaluation of the models. It is
+invoked from the command line by passing the ``scan'' action, the path
+to the log file, and the desired Tier-3 model, as in the command
+\begin{quote}\small\ttfamily
+python apache\_log.py scan <logfile> lof
+\end{quote}
+The system then reads the
+file line by line and, for every request, runs the full pipeline and produces
+two output files in JSON Lines format. The first, ``scan\_results.jsonl'',
+contains one record \emph{per log line}---both clean and attack---each
+carrying the verdict, the threat score, the severity level, and the list of
+tiers that contributed, so that the outcome of every request can be audited.
+The second, ``alerts.jsonl'', contains only the lines judged to be
+attacks, in a compact alert format. At the end of the scan the system prints
+a summary that reports the total number of lines processed, the split between
+clean and attack, and the distribution of alerts across the
+\textsc{critical}, \textsc{high}, \textsc{medium}, and \textsc{low} severity
+levels. A representative record from ``scan\_results.jsonl'' is shown
+below:
+
+\begin{quote}\small\ttfamily
+\{ "raw\_url": "/login?POST\_BODY=user...", "verdict": "ATTACK",\\
+\ "level": "HIGH", "score": 0.94, "rule\_ids": [], \\
+\ "sup\_prob": 0.98, "lof\_hit": true \}
+\end{quote}
+
+\subsection{Real-time monitoring}
+
+The real-time monitoring mode turns the system into a live sensor that
+analyses requests as they arrive. It reads log lines from standard input,
+which lets it be attached directly to a growing server log with a single
+shell pipeline, for example
+\begin{quote}\footnotesize\ttfamily
+tail -F /var/log/apache2/access.log |\\
+\hspace*{1.5em}python apache\_log.py monitor /dev/null lof
+\end{quote}
+Every incoming line is passed through the identical
+three-tier consensus, and whenever a request is judged to be an attack the
+system emits a colour-coded alert on the console---the colour reflecting the
+severity level---showing the timestamp, the source IP address, the aggregated
+threat score, the contributing tiers, and the offending request. In parallel,
+each alert is appended as a structured record to
+``runtime/monitor\_alerts.jsonl''. A companion dashboard, implemented
+with Streamlit, continuously tails this file and presents the information
+visually: key-performance-indicator cards (such as the detection rate and the
+false-positive rate), a live feed of the most recent alerts, the most active
+source IP addresses, and the distribution of alerts by threat level. Together,
+the console output and the dashboard give an analyst an immediate, continuously
+updated picture of the attacks hitting the server.
+Figure~\ref{fig:alert-monitor} shows the console of the real-time monitor at
+the moment an attack is detected, and Figure~\ref{fig:dashboard} shows the
+corresponding view on the dashboard.
+
+\begin{figure}[ht]
+  \centering
+  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.2cm}
+    \textit{[Insert a screenshot of the real-time monitor console at the
+    moment an alert is raised (the colour-coded ``[CRITICAL]/[HIGH]''
+    line with IP, threat score, tiers, and request) here.]}\vspace{2.2cm}}}
+  % Replace the box above with: \includegraphics[width=0.9\textwidth]{screenshot_monitor_alert.png}
+  \caption{Real-time monitoring console raising an alert the moment an attack
+           is detected.}
+  \label{fig:alert-monitor}
+\end{figure}
+
+\begin{figure}[ht]
+  \centering
+  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.2cm}
+    \textit{[Insert a screenshot of the Streamlit dashboard (KPI cards, live
+    alert feed, top source IPs, threat-level distribution) here.]}\vspace{2.2cm}}}
+  % Replace the box above with: \includegraphics[width=0.9\textwidth]{screenshot_dashboard.png}
+  \caption{Real-time monitoring dashboard summarising the live alert feed and
+           key performance indicators.}
+  \label{fig:dashboard}
+\end{figure}
 
 % =====================================================================
 \section{Chapter Summary}
@@ -531,8 +818,13 @@ tier trained exclusively on clean traffic (Section~\ref{sec:tier3}). Finally,
 Section~\ref{sec:consensus} introduced the smart consensus rule
 (Equation~\eqref{eq:consensus}) and the weighted threat score
 (Equation~\eqref{eq:score}), which together turn three complementary opinions
-into a single, explainable, and recall-oriented verdict. The next chapter evaluates this solution empirically, comparing the
-individual tiers and the hybrid configurations on the benchmark dataset.
+into a single, explainable, and recall-oriented verdict. Finally,
+Section~\ref{sec:modes} described the two operating modes that expose this
+pipeline in practice: the static file scan for offline, batch analysis of
+historical logs, and the real-time monitor with its live dashboard for
+protecting a running server. The next chapter evaluates this solution
+empirically, comparing the individual tiers and the hybrid configurations on
+the benchmark dataset.
 
 % --------------------- STANDALONE WRAPPER (begin) --------------------
 \end{document}

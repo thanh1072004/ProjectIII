@@ -1,0 +1,59 @@
+\relax 
+\providecommand\hyper@newdestlabel[2]{}
+\providecommand\HyField@AuxAddToFields[1]{}
+\providecommand\HyField@AuxAddToCoFields[2]{}
+\@writefile{toc}{\contentsline {chapter}{\numberline {1}Proposed Solution}{1}{chapter.1}\protected@file@percent }
+\@writefile{lof}{\addvspace {10\p@ }}
+\@writefile{lot}{\addvspace {10\p@ }}
+\newlabel{chap:solution}{{1}{1}{Proposed Solution}{chapter.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {1.1}Overview}{1}{section.1.1}\protected@file@percent }
+\newlabel{sec:overview}{{1.1}{1}{Overview}{section.1.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1.1}{\ignorespaces End-to-end processing flow of the proposed three-tier hybrid web intrusion detection system.}}{2}{figure.1.1}\protected@file@percent }
+\newlabel{fig:pipeline}{{1.1}{2}{End-to-end processing flow of the proposed three-tier hybrid web intrusion detection system}{figure.1.1}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {1.2}Request Parsing and Feature Extraction}{3}{section.1.2}\protected@file@percent }
+\newlabel{sec:pipeline-feat}{{1.2}{3}{Request Parsing and Feature Extraction}{section.1.2}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2.1}Parsing and multi-layer URL decoding}{3}{subsection.1.2.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.2.2}The shared 22-feature vector}{3}{subsection.1.2.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Structural group (nine features).}{3}{section*.1}\protected@file@percent }
+\newlabel{eq:entropy}{{1.1}{4}{Structural group (nine features)}{equation.1.1}{}}
+\@writefile{toc}{\contentsline {paragraph}{Randomness-and-encoding group (five features).}{4}{section*.2}\protected@file@percent }
+\@writefile{toc}{\contentsline {paragraph}{Semantic-and-contextual group (eight features).}{4}{section*.3}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1.2}{\ignorespaces Source code of the 22-feature extraction routine (``extract\_features'' in ``ai\_detector.py'').}}{5}{figure.1.2}\protected@file@percent }
+\newlabel{fig:code-features}{{1.2}{5}{Source code of the 22-feature extraction routine (``extract\_features'' in ``ai\_detector.py'')}{figure.1.2}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {1.3}Tier 1 --- Signature- and Rule-Based Detection}{5}{section.1.3}\protected@file@percent }
+\newlabel{sec:tier1}{{1.3}{5}{Tier 1 --- Signature- and Rule-Based Detection}{section.1.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.3.1}The rule set}{6}{subsection.1.3.1}\protected@file@percent }
+\@writefile{lot}{\contentsline {table}{\numberline {1.1}{\ignorespaces The nine Tier~1 detection rules, their matching mechanism, and the attack class each targets.}}{6}{table.1.1}\protected@file@percent }
+\newlabel{tab:rules}{{1.1}{6}{The nine Tier~1 detection rules, their matching mechanism, and the attack class each targets}{table.1.1}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1.3}{\ignorespaces Source code of the Tier~1 signature regular expressions in ``apache\_log.py''.}}{7}{figure.1.3}\protected@file@percent }
+\newlabel{fig:code-regex}{{1.3}{7}{Source code of the Tier~1 signature regular expressions in ``apache\_log.py''}{figure.1.3}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.3.2}Rule evaluation}{7}{subsection.1.3.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1.4}{\ignorespaces Source code of the Tier~1 rule-evaluation routine (``detect\_rule\_based'' in ``apache\_log.py'').}}{8}{figure.1.4}\protected@file@percent }
+\newlabel{fig:code-detect}{{1.4}{8}{Source code of the Tier~1 rule-evaluation routine (``detect\_rule\_based'' in ``apache\_log.py'')}{figure.1.4}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {1.4}Tier 2 --- Supervised Detection with Random Forest}{8}{section.1.4}\protected@file@percent }
+\newlabel{sec:tier2}{{1.4}{8}{Tier 2 --- Supervised Detection with Random Forest}{section.1.4}{}}
+\newlabel{eq:rfproba}{{1.2}{9}{Tier 2 --- Supervised Detection with Random Forest}{equation.1.2}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1.5}{\ignorespaces Source code of the supervised Random Forest tier (``supervised\_detector.py'').}}{9}{figure.1.5}\protected@file@percent }
+\newlabel{fig:code-rf}{{1.5}{9}{Source code of the supervised Random Forest tier (``supervised\_detector.py'')}{figure.1.5}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {1.5}Tier 3 --- Unsupervised One-Class Anomaly Detection}{9}{section.1.5}\protected@file@percent }
+\newlabel{sec:tier3}{{1.5}{9}{Tier 3 --- Unsupervised One-Class Anomaly Detection}{section.1.5}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1.6}{\ignorespaces Source code of the unsupervised one-class training routine (``ai\_detector.py'').}}{10}{figure.1.6}\protected@file@percent }
+\newlabel{fig:code-lof}{{1.6}{10}{Source code of the unsupervised one-class training routine (``ai\_detector.py'')}{figure.1.6}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {1.6}Smart Hybrid Consensus and Threat Scoring}{11}{section.1.6}\protected@file@percent }
+\newlabel{sec:consensus}{{1.6}{11}{Smart Hybrid Consensus and Threat Scoring}{section.1.6}{}}
+\newlabel{eq:consensus}{{1.3}{11}{Smart Hybrid Consensus and Threat Scoring}{equation.1.3}{}}
+\newlabel{eq:score}{{1.4}{11}{Smart Hybrid Consensus and Threat Scoring}{equation.1.4}{}}
+\newlabel{eq:severity}{{1.5}{11}{Smart Hybrid Consensus and Threat Scoring}{equation.1.5}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1.7}{\ignorespaces Source code of the smart hybrid consensus and threat-scoring logic in ``apache\_log.py''.}}{12}{figure.1.7}\protected@file@percent }
+\newlabel{fig:code-consensus}{{1.7}{12}{Source code of the smart hybrid consensus and threat-scoring logic in ``apache\_log.py''}{figure.1.7}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {1.7}Operating Modes: Static Scan and Real-time Monitoring}{12}{section.1.7}\protected@file@percent }
+\newlabel{sec:modes}{{1.7}{12}{Operating Modes: Static Scan and Real-time Monitoring}{section.1.7}{}}
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.7.1}Static file scan}{12}{subsection.1.7.1}\protected@file@percent }
+\@writefile{toc}{\contentsline {subsection}{\numberline {1.7.2}Real-time monitoring}{13}{subsection.1.7.2}\protected@file@percent }
+\@writefile{lof}{\contentsline {figure}{\numberline {1.8}{\ignorespaces Real-time monitoring console raising an alert the moment an attack is detected.}}{13}{figure.1.8}\protected@file@percent }
+\newlabel{fig:alert-monitor}{{1.8}{13}{Real-time monitoring console raising an alert the moment an attack is detected}{figure.1.8}{}}
+\@writefile{lof}{\contentsline {figure}{\numberline {1.9}{\ignorespaces Real-time monitoring dashboard summarising the live alert feed and key performance indicators.}}{14}{figure.1.9}\protected@file@percent }
+\newlabel{fig:dashboard}{{1.9}{14}{Real-time monitoring dashboard summarising the live alert feed and key performance indicators}{figure.1.9}{}}
+\@writefile{toc}{\contentsline {section}{\numberline {1.8}Chapter Summary}{14}{section.1.8}\protected@file@percent }
+\newlabel{sec:ch3summary}{{1.8}{14}{Chapter Summary}{section.1.8}{}}
+\gdef \@abspage@last{14}

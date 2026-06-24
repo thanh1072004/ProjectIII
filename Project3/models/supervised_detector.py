@@ -27,9 +27,14 @@ class SupervisedDetector:
     def __init__(self, algo="rf"):
         self.algo = algo.lower()
         os.makedirs(_MODELS_DIR, exist_ok=True)
-        self.model_path  = _resolve_model_path(f"sup_model_{self.algo}.pkl")
-        self.scaler_path = _resolve_model_path(f"sup_scaler_{self.algo}.pkl")
-        self.vocab_path  = _resolve_model_path(f"sup_vocab_{self.algo}.pkl")
+        # Supervised models do scripts/retrain_final_all_models.py train và lưu
+        # dưới tên *_final.pkl, train trên dữ liệu THÔ (không scaler, không vocab).
+        _final = {"rf": "rf_final.pkl", "lr": "lr_final.pkl"}
+        if self.algo not in _final:
+            raise ValueError(f"[LỖI] Không hỗ trợ algo: {self.algo}")
+        self.model_path  = _resolve_model_path(_final[self.algo])
+        self.scaler_path = None
+        self.vocab_path  = None
 
         if self.algo == "rf":
             self.clf = RandomForestClassifier(
@@ -112,12 +117,10 @@ class SupervisedDetector:
         try:
             self.model = joblib.load(self.model_path)
             self.clf = self.model  # so evaluate_batch / predict use the fitted estimator
-            if self.needs_scaling and os.path.exists(self.scaler_path):
-                self.scaler = joblib.load(self.scaler_path)
-            if os.path.exists(self.vocab_path):
-                self._extractor.path_param_vocab = joblib.load(self.vocab_path)
-            print(f"[SUP] Loaded {self.algo.upper()} model "
-                  f"(vocab={len(self._extractor.path_param_vocab)} paths)")
+            # *_final models train trên dữ liệu thô: không scaler, không vocab.
+            self.scaler = None
+            self._extractor.path_param_vocab = {}
+            print(f"[SUP] Loaded {self.algo.upper()} model (raw features, no vocab)")
             return True
         except Exception as e:
             print(f"[LỖI] Lỗi khi load supervised model: {e}")
@@ -128,7 +131,7 @@ class SupervisedDetector:
             return False
         feats = self._extractor.extract_features(path, query, method, status, user_agent, referer)
         X = np.array([feats], dtype=float)
-        if self.needs_scaling:
+        if self.scaler is not None:
             X = self.scaler.transform(X)
         return bool(self.clf.predict(X)[0] == 1)
 
@@ -137,7 +140,7 @@ class SupervisedDetector:
             return 0.0
         feats = self._extractor.extract_features(path, query, method, status, user_agent, referer)
         X = np.array([feats], dtype=float)
-        if self.needs_scaling:
+        if self.scaler is not None:
             X = self.scaler.transform(X)
         return float(self.clf.predict_proba(X)[0][1])
 
@@ -145,7 +148,7 @@ class SupervisedDetector:
     def evaluate_batch(self, log_data, labels):
         X = np.array([self._row_features(d) for d in log_data], dtype=float)
         y = np.array(labels, dtype=int)
-        if self.needs_scaling:
+        if self.scaler is not None:
             X = self.scaler.transform(X)
         y_pred = self.clf.predict(X)
         cm = confusion_matrix(y, y_pred, labels=[0, 1])

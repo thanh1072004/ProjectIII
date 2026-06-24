@@ -98,10 +98,6 @@ STEP 3: Synthetic Generation + Merge
 └──────────┬───────────────────────────────┘
            │
        Split 70/30
-     ╱                ╲
-    ▼                  ▼
-70,091 (70%)      30,039 (30%)
-   TRAIN             EVAL
 ```
 
 ### 1.3. Dataset Files
@@ -112,7 +108,7 @@ STEP 3: Synthetic Generation + Merge
 | `csic_clean.log` | 8.16 MB | 36,000 | 0% | CSIC clean only |
 | `csic_attack.log` | 7.68 MB | 25,065 | 100% | CSIC attack only |
 | **`final_dataset_train.log`** | **15.82 MB** | **70,091** | **50.15%** | **Tier 2 + Tier 3 training** |
-| **`final_dataset_eval.log`** | **6.75 MB** | **30,039** | **49.65%** | **Model evaluation** |
+| **`final_dataset_eval.log`** | **6.75 MB** | **28,767** | **47.43%** | **Model evaluation** |
 | **`final_dataset_train_clean_only.log`** | **6.74 MB** | **34,941** | **0%** | **Tier 3 training (clean only)** |
 
 ---
@@ -430,7 +426,7 @@ Project3/
 │  ├─ csic_clean.log                     # CSIC clean logs only (8.16 MB)
 │  ├─ csic_attack.log                    # CSIC attack logs only (7.68 MB)
 │  ├─ final_dataset_train.log            # 70,091 logs (70% - for training)
-│  ├─ final_dataset_eval.log             # 30,039 logs (30% - for evaluation)
+│  ├─ final_dataset_eval.log             # 28,767 logs (30% - for evaluation)
 │  ├─ final_dataset_train_clean_only.log # 34,941 clean logs (Tier 3 training)
 │  └─ test_monitor.log                   # Demo logs for testing
 │
@@ -651,8 +647,3 @@ Suspicious params: cmd, shell, exec, system, eval, base64_decode
 
 
 ---
-
-**Last Updated:** 2026-06-08  
-**Status:** Production Ready ✅  
-**Dataset:** 111,065 logs, 50/50 balanced  
-**Best Model:** RandomForest (Tier 2) F1 = 94.78%

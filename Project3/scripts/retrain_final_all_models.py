@@ -10,7 +10,7 @@ Tier 3 (Unsupervised):
 - Train: final_dataset_train_clean_only.log (34,941 clean logs)
 - Models: IsolationForest, OneClassSVM, LocalOutlierFactor
 
-Evaluation: final_dataset_eval.log (30,039 logs)
+Evaluation: final_dataset_eval.log (28,767 parsed logs)
 """
 
 import os

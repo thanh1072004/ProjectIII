@@ -15,7 +15,10 @@ with open(results_path, 'r') as f:
 
 # Extract data
 tiers = results['tiers_and_hybrid']
-tier_names = [t['name'] for t in tiers]
+# Rút gọn nhãn hiển thị: "Smart Consensus (T2 70% + T3 30%)" là cách diễn đạt
+# SAI (consensus không phải trộn tuyến tính 70/30) -> chỉ hiển thị "Smart Consensus".
+tier_names = ['Smart Consensus' if t['name'].startswith('Smart Consensus') else t['name']
+              for t in tiers]
 colors_list = ['#FF6B6B', '#2E86AB', '#06A77D', '#F18F01', '#A23B72']
 
 # Create 2x2 subplot figure
@@ -112,7 +115,7 @@ print(f"\n✅ Legend:")
 print(f"   Tier 1 (Red):       Regex Rules - Baseline (too conservative)")
 print(f"   Tier 2 (Blue):      RandomForest - Best standalone")
 print(f"   Tier 3 (Green):     Local Outlier Factor - Anomaly detection")
-print(f"   Smart Hybrid (Orange): RF 70% + LOF 30% - Recommended for production")
+print(f"   Smart Hybrid (Orange):  Recommended for production")
 print(f"   Voting Hybrid (Purple): T1 OR T2 OR T3 - Alternative high-sensitivity")
 
 print(f"\n✅ Dataset: 111,065 total logs (47.43% attack rate)")

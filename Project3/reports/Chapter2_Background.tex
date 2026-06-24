@@ -461,6 +461,28 @@ counter-intuitive, helps the random forest achieve high performance and
 robustness against overfitting. For a classification task, the final result
 is the class voted for by the most trees.
 
+Formally, when growing each tree, a node is split so as to minimise the
+impurity of the resulting child nodes. Writing $p_i$ for the proportion of
+class $i$ among the samples in a node, the two impurity measures commonly
+used are the Gini impurity and the Shannon entropy,
+\begin{equation}
+  G = 1 - \sum_{i} p_i^{2},
+  \qquad
+  H = -\sum_{i} p_i \log_2 p_i .
+  \label{eq:gini}
+\end{equation}
+For an ensemble of $B$ trees $\{T_b\}_{b=1}^{B}$, the predicted class of a
+sample $x$ is the majority vote $\hat{y}(x) = \operatorname{mode}\{T_b(x)\}$,
+and the probability that $x$ is an attack is estimated as the fraction of
+trees voting for the attack class,
+\begin{equation}
+  p_{\text{attack}}(x) = \frac{1}{B}\sum_{b=1}^{B}
+  \mathbf{1}\!\left[T_b(x) = \text{attack}\right],
+  \label{eq:rfvote}
+\end{equation}
+where $\mathbf{1}[\cdot]$ is the indicator function. This probability, rather
+than the hard label, is what the smart consensus mechanism later exploits.
+
 In the thesis, the Random Forest is configured with $200$ trees and
 balanced class weights (\texttt{class\_weight="balanced"}); being
 threshold-based, it requires no feature scaling. Crucially, besides the
@@ -475,9 +497,25 @@ $94.78\%$, the best single model in the system.
 
 Logistic Regression is a linear classifier that estimates the probability
 of a sample belonging to a class as a smooth function of the input
-features~\cite{pham2016}, trained by maximum likelihood. Pham et
-al.~\cite{pham2016} note that it suits binary classification well and has
-low variance, so it is less prone to overfitting. In the thesis it serves
+features~\cite{pham2016}, trained by maximum likelihood. Concretely, for a
+weight vector $\mathbf{w}$ and bias $b$ it models the attack probability with
+the logistic (sigmoid) function,
+\begin{equation}
+  P(y=1 \mid x) = \sigma(\mathbf{w}^{\top}x + b),
+  \qquad
+  \sigma(z) = \frac{1}{1 + e^{-z}},
+  \label{eq:sigmoid}
+\end{equation}
+and its parameters are fitted by minimising the binary cross-entropy
+(log-loss) over the $n$ training samples,
+\begin{equation}
+  \mathcal{L} = -\sum_{i=1}^{n}
+  \Big[\, y_i \log p_i + (1-y_i)\log(1-p_i) \,\Big],
+  \qquad p_i = P(y=1 \mid x_i).
+  \label{eq:logloss}
+\end{equation}
+Pham et al.~\cite{pham2016} note that it suits binary classification well and
+has low variance, so it is less prone to overfitting. In the thesis it serves
 as a backup and reference model; being scale-sensitive, it is applied with
 a feature-scaling step (\texttt{StandardScaler}), unlike the Random Forest.
 Its F1 score is about $79.99\%$, lower than the Random Forest, consistent
@@ -525,7 +563,34 @@ of that point with the density of its neighbours. A point lying in a region
 markedly sparser than its neighbourhood receives a high LOF score and is
 treated as an outlier. The ``local'' nature of the algorithm enables it to
 detect subtle anomalies sitting between regions of different density, which
-methods based on a global threshold tend to miss. In the thesis, LOF is
+methods based on a global threshold tend to miss.
+
+Formally, let $N_k(p)$ be the set of the $k$ nearest neighbours of a point
+$p$ and let $d(p,o)$ be the distance between $p$ and $o$. The
+\emph{reachability distance} of $p$ from $o$ smooths short distances using
+the $k$-distance of $o$,
+\begin{equation}
+  \text{reach-dist}_k(p,o) = \max\{\, k\text{-distance}(o),\; d(p,o) \,\}.
+  \label{eq:reachdist}
+\end{equation}
+The \emph{local reachability density} of $p$ is the inverse of the average
+reachability distance to its neighbours,
+\begin{equation}
+  \text{lrd}_k(p) = \left( \frac{1}{|N_k(p)|}
+  \sum_{o \in N_k(p)} \text{reach-dist}_k(p,o) \right)^{-1},
+  \label{eq:lrd}
+\end{equation}
+and the Local Outlier Factor of $p$ is the average ratio of the neighbours'
+densities to its own,
+\begin{equation}
+  \text{LOF}_k(p) = \frac{1}{|N_k(p)|}
+  \sum_{o \in N_k(p)} \frac{\text{lrd}_k(o)}{\text{lrd}_k(p)} .
+  \label{eq:lof}
+\end{equation}
+A value of $\text{LOF}_k(p) \approx 1$ indicates that $p$ has a density
+comparable to its neighbours (an inlier), whereas $\text{LOF}_k(p) \gg 1$
+marks $p$ as an outlier sitting in a comparatively sparse region. In the
+thesis, LOF is
 configured with \texttt{n\_neighbors = 20} and the novelty-detection mode
 (\texttt{novelty = True}) so that it can predict on unseen data. It is the
 best-performing unsupervised model, with a precision of $88.28\%$ and a
@@ -541,7 +606,25 @@ anomalous points. The idea rests on two properties of outliers: they are
 the minority and they have attribute values markedly different from the
 bulk of the data. By recursively and randomly partitioning the feature
 space, anomalous points tend to be isolated after fewer splits,
-corresponding to a smaller average depth in the tree. The advantage of the
+corresponding to a smaller average depth in the tree.
+
+Quantitatively, let $h(x)$ be the path length of a point $x$ (the number of
+edges from the root to the leaf isolating it) and let $E(h(x))$ be its
+average over all trees. The expected path length of an unsuccessful search in
+a binary tree of $n$ points is used for normalisation,
+\begin{equation}
+  c(n) = 2H(n-1) - \frac{2(n-1)}{n},
+  \qquad H(i) \approx \ln(i) + 0.5772,
+  \label{eq:cn}
+\end{equation}
+where $0.5772$ is the Euler--Mascheroni constant. The anomaly score is then
+\begin{equation}
+  s(x,n) = 2^{-\,E(h(x))/c(n)} ,
+  \label{eq:ifscore}
+\end{equation}
+so that $s \to 1$ when the average path length is very short (a likely
+anomaly), and $s \approx 0.5$ when it is comparable to that of a normal
+point. The advantage of the
 Isolation Forest is its high speed and low memory demand thanks to its use
 of sampling. In the thesis, this model attains high recall ($93.14\%$) but
 a lower precision than LOF ($63.02\%$), so it serves as a comparison model
@@ -553,10 +636,25 @@ The One-Class SVM, proposed by Sch\"{o}lkopf et al.~\cite{scholkopf1999},
 extends the support vector machine to the novelty-detection problem. The
 algorithm learns a boundary enclosing the region of normal data in the
 feature space; points falling outside this boundary are considered
-anomalous. By using a kernel function---typically the radial basis function
-(RBF) kernel as in the thesis---the One-Class SVM can describe complex
-non-linear boundaries. Because the algorithm is sensitive to feature scale,
-the thesis applies a scaling step before training. The model attains a
+anomalous. Mapping the inputs into a feature space through a function
+$\phi(\cdot)$, it solves the optimisation problem
+\begin{equation}
+  \min_{\mathbf{w},\,\xi,\,\rho}\;
+  \frac{1}{2}\lVert \mathbf{w}\rVert^{2}
+  + \frac{1}{\nu n}\sum_{i=1}^{n}\xi_i - \rho
+  \quad\text{s.t.}\quad
+  \langle \mathbf{w}, \phi(x_i)\rangle \geq \rho - \xi_i,\;\; \xi_i \geq 0,
+  \label{eq:ocsvm}
+\end{equation}
+and classifies a new point by the sign of the decision function
+$f(x) = \operatorname{sign}\!\big(\langle \mathbf{w}, \phi(x)\rangle - \rho\big)$,
+a negative sign indicating an anomaly. The parameter $\nu \in (0,1]$ upper-bounds
+the fraction of training points allowed to fall outside the boundary. By
+using a kernel function---typically the radial basis function (RBF) kernel
+$K(x,x') = \exp(-\gamma\lVert x - x'\rVert^{2})$ as in the thesis---the
+One-Class SVM can describe complex non-linear boundaries. Because the
+algorithm is sensitive to feature scale, the thesis applies a scaling step
+before training. The model attains a
 recall of $91.38\%$ but a precision of only $62.27\%$, similar to the
 Isolation Forest, reinforcing the conclusion that among the three one-class
 algorithms, LOF is the most suitable for the HTTP log data of this problem.
@@ -662,96 +760,12 @@ decision mechanism, turning the theoretical principles laid out here into a
 complete detection system.
 
 % =====================================================================
-% BIBLIOGRAPHY
-% Move these \bibitem entries into your global .bib / thebibliography and
-% renumber to stay consistent with the rest of the thesis.
+% NOTE: The chapter-local bibliography has been removed. All references
+% (pham2016, althubiti2017, nguyen2011, csic2010, rawashdeh2023, kim2020,
+% vartouni2018, betarte2018, tsai2009, owasp2021, breiman2001,
+% scholkopf1999, breunig2000, liu2008) now live in the global reference.bib
+% and are printed once in the REFERENCE section via \printbibliography.
 % =====================================================================
-\begin{thebibliography}{99}
-
-\bibitem{pham2016}
-T.~S. Pham, T.~H. Hoang, and V.~C. Vu,
-``Machine learning techniques for web intrusion detection -- a comparison,''
-in \emph{Proc. 8th Int. Conf. on Knowledge and Systems Engineering (KSE)},
-IEEE, 2016, pp. 291--297.
-
-\bibitem{althubiti2017}
-S.~Althubiti, X.~Yuan, and A.~Esterline,
-``Analyzing HTTP requests for web intrusion detection,''
-in \emph{KSU Proc. on Cybersecurity Education, Research and Practice}, 2017.
-
-\bibitem{nguyen2011}
-H.~T. Nguyen et al.,
-``Application of the generic feature selection measure in detection of web
-attacks,''
-in \emph{Computational Intelligence in Security for Information Systems}.
-Berlin: Springer, 2011, pp. 25--32.
-
-\bibitem{csic2010}
-C.~T. Gim\'{e}nez, A.~P. Villegas, and G.~\'{A}. Mara\~{n}\'{o}n,
-``HTTP Dataset CSIC 2010,''
-CSIC (Spanish Research National Council), 2010. [Online]. Available:
-\url{http://www.isi.csic.es/dataset/}
-
-\bibitem{rawashdeh2023}
-S.~Rawashdeh,
-``Cybersecurity in machine learning techniques: Detecting network attacks,''
-\emph{Acta Scientific Computer Sciences}, vol.~5, no.~11, pp. 21--29, 2023.
-
-\bibitem{kim2020}
-A.~Kim et al.,
-``AI-IDS: Application of deep learning to real-time web intrusion
-detection,''
-\emph{IEEE Access}, vol.~8, pp. 70245--70261, 2020.
-
-\bibitem{vartouni2018}
-A.~M. Vartouni et al.,
-``An anomaly detection method to detect web attacks using stacked
-auto-encoder,''
-in \emph{6th Iranian Joint Congress on Fuzzy and Intelligent Systems
-(CFIS)}, 2018, pp. 131--134.
-
-\bibitem{betarte2018}
-G.~Betarte et al.,
-``Web application attacks detection using machine learning techniques,''
-in \emph{17th IEEE Int. Conf. on Machine Learning and Applications
-(ICMLA)}, 2018, pp. 1065--1072.
-
-\bibitem{tsai2009}
-C.-F. Tsai, Y.-F. Hsu, C.-Y. Lin, and W.-Y. Lin,
-``Intrusion detection by machine learning: A review,''
-\emph{Expert Systems with Applications}, vol.~36, no.~10,
-pp. 11994--12000, 2009.
-
-\bibitem{owasp2021}
-OWASP Foundation,
-``OWASP Top 10:2021 -- A03:2021 Injection,'' 2021. [Online]. Available:
-\url{https://owasp.org/Top10/2021/}
-
-\bibitem{breiman2001}
-L.~Breiman,
-``Random forests,''
-\emph{Machine Learning}, vol.~45, no.~1, pp. 5--32, 2001.
-
-\bibitem{scholkopf1999}
-B.~Sch\"{o}lkopf, J.~C. Platt, J.~Shawe-Taylor, A.~J. Smola, and
-R.~C. Williamson,
-``Estimating the support of a high-dimensional distribution
-(support vector method for novelty detection),''
-\emph{Neural Computation}, vol.~13, no.~7, pp. 1443--1471, 1999.
-
-\bibitem{breunig2000}
-M.~M. Breunig, H.-P. Kriegel, R.~T. Ng, and J.~Sander,
-``LOF: Identifying density-based local outliers,''
-in \emph{Proc. 2000 ACM SIGMOD Int. Conf. on Management of Data},
-Dallas, TX, 2000, pp. 93--104.
-
-\bibitem{liu2008}
-F.~T. Liu, K.~M. Ting, and Z.-H. Zhou,
-``Isolation forest,''
-in \emph{Proc. 8th IEEE Int. Conf. on Data Mining (ICDM)}, 2008,
-pp. 413--422.
-
-\end{thebibliography}
 
 % --------------------- STANDALONE WRAPPER (begin) --------------------
 \end{document}

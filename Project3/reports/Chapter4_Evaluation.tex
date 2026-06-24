@@ -505,7 +505,7 @@ top-right corner, away from the low-precision cluster of the Isolation Forest
 and One-Class SVM.
 
 It is worth noting how these figures relate to the related work surveyed in
-Chapter~\ref{chap:background}. Although a direct numeric comparison is
+Chapter 2. Although a direct numeric comparison is
 imperfect because the evaluation protocols and feature sets differ, the
 proposed hybrid attains a recall ($97.62\%$) that is higher than the
 attack-class recall reported by Pham et al.~\cite{pham2016} for their best
@@ -564,6 +564,69 @@ corroborate the quantitative conclusion of Section~\ref{sec:res-hybrid} that
 the smart consensus offers the best recall-oriented balance.
 
 % =====================================================================
+\section{Cross-dataset Evaluation and Dataset Selection}
+\label{sec:res-crossdataset}
+
+All results reported so far were obtained on the primary corpus, namely
+CSIC~2010 combined with the GitHub attack payloads and synthetic traffic. To
+check that the proposed methodology is not tied to a single benchmark, the
+entire three-tier pipeline was re-trained and re-evaluated, under an
+identical $70/30$ protocol, on two additional public web-attack datasets:
+the HttpParams~2015 parameter-value dataset and the ECML/PKDD~2007 challenge
+dataset. Table~\ref{tab:crossdataset} reports, for each dataset, the F1 score
+of the best supervised model (Random Forest) and the best unsupervised model
+(Local Outlier Factor), together with the F1 and F2 of the proposed smart
+consensus.
+
+\begin{table}[ht]
+  \centering
+  \caption{The three-tier system trained and tested on each dataset under the
+           same protocol (all values in \%).}
+  \label{tab:crossdataset}
+  \renewcommand{\arraystretch}{1.35}
+  \setlength{\tabcolsep}{8pt}
+  \footnotesize
+  \begin{tabular}{|l|r|r|r|r|r|}
+    \hline
+    \textbf{Dataset} & \textbf{Eval size} & \textbf{RF F1} &
+    \textbf{LOF F1} & \textbf{Consensus F1} & \textbf{Consensus F2} \\
+    \hline
+    CSIC 2010 + GitHub (primary) & 28{,}767 & 94.78 & 91.57 & 94.30 & 96.26 \\
+    \hline
+    HttpParams 2015 & 9{,}321 & 99.73 & 82.25 & 99.53 & 99.61 \\
+    \hline
+    ECML/PKDD 2007 & 15{,}035 & 83.09 & 57.24 & 73.74 & 79.26 \\
+    \hline
+  \end{tabular}
+\end{table}
+
+The three datasets behave very differently, and this is precisely what
+motivates the choice of CSIC~2010 as the primary corpus. On
+\textbf{HttpParams~2015} the system reaches almost perfect scores
+(Random Forest F1 of $99.73\%$), but this dataset consists of isolated
+parameter \emph{values} built from textbook attack payloads, so the decision
+boundary between benign and malicious samples is unusually clean; in effect
+the dataset makes the system look ``too easy'' and does not reflect the
+structure of real HTTP traffic. On \textbf{ECML/PKDD~2007} the scores are the
+lowest (Random Forest F1 of $83.09\%$, consensus F2 of $79.26\%$) because its
+requests are heavily randomised: paths, parameters, and headers are
+synthetic, noisy strings, so even legitimate traffic looks irregular and the
+detectors struggle to learn a stable notion of ``normal''. \textbf{CSIC~2010},
+by contrast, was generated against a real e-commerce web application, so its
+requests have realistic endpoints, parameter names, and value distributions
+that closely match the traffic a deployed system would actually see; it
+yields strong and, above all, \emph{representative} results
+(consensus F2 of $96.26\%$). For these reasons CSIC~2010 combined with the
+GitHub payloads was selected as the main dataset of the thesis: it offers the
+best balance between high, trustworthy accuracy and fidelity to real-world
+web traffic, whereas HttpParams is unrealistically easy and ECML is
+unrealistically noisy. Across all three datasets, however, the qualitative
+ranking of the tiers is consistent---the Random Forest is the strongest
+single model and the smart consensus delivers the highest F2---which confirms
+that the proposed methodology generalises and is not an artefact of one
+benchmark.
+
+% =====================================================================
 \section{Chapter Summary}
 \label{sec:ch4summary}
 
@@ -585,10 +648,14 @@ every single tier and on naive voting by validating anomaly detections with
 the supervised model. Finally, the error analysis
 (Section~\ref{sec:res-confusion}) confirmed, through the confusion matrices,
 that the smart consensus minimises missed attacks while keeping false alarms
-under control. Together, these results demonstrate that the three-tier hybrid
-design meets its objective of recall-oriented, robust, and explainable web
-intrusion detection. The next chapter draws conclusions and outlines
-directions for future work.
+under control. Finally, the cross-dataset study
+(Section~\ref{sec:res-crossdataset}) re-trained the pipeline on HttpParams
+2015 and ECML/PKDD 2007 and justified the choice of CSIC~2010 as the primary
+corpus, showing that the tier ranking is consistent across datasets while
+CSIC offers the most realistic and trustworthy results. Together, these
+results demonstrate that the three-tier hybrid design meets its objective of
+recall-oriented, robust, and explainable web intrusion detection. The next
+chapter draws conclusions and outlines directions for future work.
 
 % --------------------- STANDALONE WRAPPER (begin) --------------------
 \end{document}

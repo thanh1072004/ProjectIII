@@ -101,9 +101,9 @@ Split 70/30
     │  ├─ 35,150 attack (50.15%)
     │  └─ 34,941 clean (49.85%)
     │
-    ├─ final_dataset_eval.log: 30,039 logs (30%)
-    │  ├─ 14,915 attack (49.65%)
-    │  └─ 15,124 clean (50.35%)
+    ├─ final_dataset_eval.log: 28,767 logs (30%)
+    │  ├─ 13,643 attack (47.43%)
+    │  └─ 15,124 clean (52.57%)
     │
     └─ final_dataset_train_clean_only.log: 34,941 logs (for Tier 3)
        └─ All clean logs (no attacks, no labels)
@@ -121,7 +121,7 @@ Split 70/30
 | csic_clean.log | 8.16 MB | 36,000 | 0 | 36,000 | 0% |
 | csic_attack.log | 7.68 MB | 25,065 | 25,065 | 0 | 100% |
 | final_dataset_train.log | 15.82 MB | 70,091 | 35,150 | 34,941 | 50.15% |
-| final_dataset_eval.log | 6.75 MB | 30,039 | 14,915 | 15,124 | 49.65% |
+| final_dataset_eval.log | 6.75 MB | 28,767 | 13,643 | 15,124 | 47.43% |
 | final_dataset_train_clean_only.log | 6.74 MB | 34,941 | 0 | 34,941 | 0% |
 
 ### **Data Sources Composition:**
@@ -302,7 +302,7 @@ datasets/
 ├─ csic_clean.log                       # 36,000 CSIC clean
 ├─ csic_attack.log                      # 25,065 CSIC attack
 ├─ final_dataset_train.log              # 70,091 logs (70%) - FOR TRAINING ALL MODELS
-├─ final_dataset_eval.log               # 30,039 logs (30%) - FOR EVALUATION
+├─ final_dataset_eval.log               # 28,767 logs (30%) - FOR EVALUATION
 └─ final_dataset_train_clean_only.log   # 34,941 clean (FOR TIER 3 TRAINING)
 ```
 
@@ -335,7 +335,7 @@ analysis/
 - ✅ **Perfect 50/50 balance** (50,065 attack + 50,065 clean)
 - ✅ **Tier 2 trained on labeled data** (supervised)
 - ✅ **Tier 3 trained on clean data only** (proper one-class learning)
-- ✅ **Evaluation on balanced test set** (30,039 logs, 47.43% attack)
+- ✅ **Evaluation on balanced test set** (28,767 logs, 47.43% attack)
 - ✅ **Feature extraction working** (all 111,065 logs → 22-D vectors)
 - ✅ **Models saved and ready** for deployment
 

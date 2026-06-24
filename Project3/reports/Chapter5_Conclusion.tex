@@ -51,7 +51,7 @@ on those limitations to propose concrete directions for future development.
 
 The objective of this project was to build a web intrusion detection system
 that overcomes the central weakness of the existing literature surveyed in
-Chapter~\ref{chap:background}, namely the reliance on a single detection
+Chapter 2, namely the reliance on a single detection
 paradigm. Signature-based detectors are precise but blind to new attacks,
 purely supervised detectors require labelled data and cannot generalise
 beyond the attack families they were trained on, and purely unsupervised
@@ -66,7 +66,7 @@ delivered the following concrete results.
         an unsupervised one-class anomaly tier, and reconciles their opinions
         through a smart consensus rule in which the supervised model
         validates the anomaly tier. This design, detailed in
-        Chapter~\ref{chap:solution}, is the core contribution of the thesis.
+        Chapter 3, is the core contribution of the thesis.
   \item \textbf{A balanced benchmark dataset.} A corpus of $111{,}065$ log
         lines was assembled from the CSIC 2010 dataset, real attack payloads
         from a public repository, and synthetic traffic, balanced evenly
@@ -79,7 +79,7 @@ delivered the following concrete results.
         body, and represents every request with a compact, shared
         $22$-feature vector.
   \item \textbf{Strong, recall-oriented results.} As reported in
-        Chapter~\ref{chap:evaluation}, the supervised tier alone reaches an F1
+        Chapter 4, the supervised tier alone reaches an F1
         of $94.78\%$ and the one-class tier alone an F1 of $91.57\%$, while
         the proposed smart consensus achieves the system's best F2 score of
         $96.26\%$, combining a recall of $97.62\%$ with a precision of
@@ -150,12 +150,37 @@ development are worth pursuing.
         the system against adversarially crafted payloads, would harden it
         against attackers who deliberately target the detector.
 
-  \item \textbf{From detection to prevention.} Finally, the system could be
+  \item \textbf{From detection to prevention.} The system could be
         integrated with a web application firewall so that high-confidence
         alerts trigger automatic blocking, turning the present detection-only
         pipeline into an active prevention mechanism, with the consensus
         score serving as a natural, tunable threshold for the blocking
         decision.
+
+  \item \textbf{Production deployment at scale.} In a real deployment the
+        detector would operate inside a streaming pipeline rather than
+        process a static log file, and it would be combined with several
+        standard infrastructure components. Web servers (Apache or Nginx)
+        would ship their access logs through a lightweight forwarder such as
+        Filebeat or Fluent Bit into an \emph{Apache Kafka} topic that acts as
+        a buffering queue; this decouples the rate at which logs are produced
+        from the rate at which they are analysed and absorbs sudden traffic
+        spikes without losing events. The IDS itself would be packaged as a
+        container and run as one or more Kafka consumers on a
+        \emph{Kubernetes} cluster: when Kafka reports that the queue is
+        growing (a traffic surge), a horizontal autoscaler---for example KEDA
+        driven by the Kafka consumer lag---would automatically replicate the
+        IDS from a single container to many parallel ones, and scale them
+        back down once the backlog drains, so the system neither loses data
+        nor wastes resources. The JSON alerts emitted by the consensus stage
+        would then be forwarded to a \emph{SIEM} platform (such as Elastic/ELK,
+        Splunk, Wazuh, or IBM QRadar) for correlation with other security
+        events, long-term storage, dashboards, and incident response; the
+        highest-confidence alerts could additionally drive the web application
+        firewall of the previous point to block offending requests in real
+        time. Designing, implementing, and benchmarking this architecture
+        under production load is a natural direction for future engineering
+        work.
 \end{romanlist}
 
 Taken together, these directions would extend the thesis from a strong,
