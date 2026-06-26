@@ -2,7 +2,7 @@
 
 **Đề tài:** Phát hiện tấn công lên web server từ HTTP/HTTPS logs bằng kiến trúc hybrid 3-tier kết hợp **regex + supervised learning + unsupervised anomaly detection**.
 
-**Dataset:** 111,065 logs cân bằng (50% attack, 50% clean) từ CSIC 2010 database + 748 GitHub payloads + synthetic traffic.
+**Dataset:** 111,065 logs cân bằng (50% attack, 50% clean) từ CSIC 2010 database + 448 GitHub payloads + synthetic traffic.
 
 **Kết quả:** 
 - **Tier 2 (RandomForest):** F1 = **94.78%** (Supervised)
@@ -17,7 +17,7 @@
 ```
 TOTAL: 111,065 logs
 ├─ Synthetic Attack: 25,000 logs
-│  └─ Từ 748 payloads từ PayloadsAllTheThings GitHub
+│  └─ Từ 448 payloads từ PayloadsAllTheThings GitHub
 │     ├─ SQL Injection: 200 payloads
 │     ├─ XSS: 200 payloads
 │     ├─ RCE/Command Injection: 200 payloads
@@ -435,7 +435,7 @@ Project3/
 │  ├─ split_csic_clean_attack.py         # Split CSIC into clean/attack
 │  ├─ build_final_dataset_comprehensive.py # Combine all sources (111k logs)
 │  ├─ download_payloads_github.py        # Download from PayloadsAllTheThings
-│  ├─ payloads_from_github.py            # Extracted payloads (748)
+│  ├─ payloads_from_github.py            # Extracted payloads (448)
 │  └─ retrain_final_all_models.py        # Retrain all models
 │
 ├─ analysis/                             # Evaluation & reports

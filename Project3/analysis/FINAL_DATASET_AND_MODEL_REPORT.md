@@ -67,7 +67,7 @@ csic_clean.log    csic_attack.log
 ```
 Synthetic Generation (50,000 logs)
 ├─ 25,000 attack logs
-│  └─ From 748 GitHub PayloadsAllTheThings
+│  └─ From 448 GitHub PayloadsAllTheThings
 │  └─ 5-8 encoding variations per payload
 │  └─ 40% POST requests with POST_BODY
 │

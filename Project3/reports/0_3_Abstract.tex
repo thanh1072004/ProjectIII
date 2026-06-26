@@ -1,0 +1,18 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\begin{center}
+    \Large{\textbf{ABSTRACT}}\\
+\end{center}
+\vspace{1cm}
+The rapid growth of web applications brings critical security risks to system resources and data. Current Intrusion Detection Systems (IDS) generally rely on either signature-based rules or artificial intelligence. However, rule-based systems are often too conservative and fail to detect novel attack variants, while standalone machine learning models struggle to balance precision and false positive rates, heavily depending on labeled data. To overcome these limitations, this thesis adopts a hybrid approach combining regular expressions, supervised learning, and unsupervised anomaly detection. This direction maximizes the scanning speed and absolute precision of traditional rules while leveraging AI's ability to identify unknown attacks. We propose a 3-Tier Hybrid Web Attack Detection System. The first tier utilizes Regex rules to quickly filter out obvious, known attack patterns. The second tier employs a supervised Random Forest classifier for high-confidence detection using 22 engineered features, including complex URL and POST body analysis. The third tier applies the Local Outlier Factor algorithm, trained solely on clean data under the one-class learning principle, to isolate subtle, unseen anomalies. These tiers operate together through a Smart Consensus mechanism to make the final decision. The main contribution of this thesis is the successful development of a comprehensive, multi-layered IDS architecture with an advanced feature extraction pipeline. Evaluated on a balanced dataset of over 111,000 logs, the hybrid system achieved outstanding overall performance. The results demonstrate an excellent balance between precision and recall, significantly reducing false positives compared to single-model approaches while maintaining an extremely high detection rate, making the system highly robust and ready for real-world deployment.
+\begin{flushright}
+\begin{tabular}{@{}c@{}}
+Student\\
+Thanh\\
+Tran Cong Thanh\\
+% \textit{(Signature and full name)}
+\end{tabular}
+\end{flushright}
+
+\end{document}

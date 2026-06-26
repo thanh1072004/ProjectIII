@@ -1,63 +1,11 @@
-% =====================================================================
-%  CHAPTER 4 — EVALUATION AND RESULTS
-%  Graduation thesis: A hybrid (signature + AI) web intrusion detection
-%  system operating on Apache HTTP/HTTPS access logs.
-%
-%  IMAGE-TO-SECTION MAP (files live in Project3/analysis/charts/)
-%  -------------------------------------------------------------
-%   Section 4.3 (individual tiers):
-%       comprehensive_metrics.png   -> Figure 4.1
-%       f1_ranking.png              -> Figure 4.2
-%   Section 4.4 (hybrid fusion):
-%       model_comparison.png        -> Figure 4.3
-%       precision_vs_recall.png     -> Figure 4.4
-%       radar_comparison.png        -> Figure 4.5
-%   Section 4.5 (error analysis):
-%       confusion_matrices.png      -> Figure 4.6
-%
-%  CONSISTENCY NOTE
-%  ----------------
-%  All figures (4.1-4.6) and headline numbers in this chapter come from the
-%  SAME primary per-sample evaluation on 28,767 log lines (13,643 attack /
-%  15,124 clean), stored in analysis/tier_and_hybrid_results.json and
-%  analysis/comprehensive_comparison.json. Figure 4.6
-%  (confusion_matrices.png) was regenerated on this 28,767-line set by
-%  scripts/generate_confusion_matrices.py, so its per-panel P/R/F1/F2 match
-%  the tables exactly.
-%
-%  PATHS: \graphicspath below assumes this .tex sits in Project3/reports/.
-%  Adjust if you move the file.
-% =====================================================================
-
-% --------------------- STANDALONE WRAPPER (begin) --------------------
-\documentclass[12pt,a4paper]{report}
-\usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
-\usepackage{lmodern}
-\usepackage{amsmath}
-\usepackage{booktabs}
-\usepackage{array}
+\documentclass[../main.tex]{subfiles}
 \usepackage{enumitem}
-\usepackage{graphicx}
-\usepackage{url}
-\usepackage[hidelinks]{hyperref}
-\usepackage{geometry}
-\geometry{margin=1in}
-\usepackage{textcomp}
-
-\graphicspath{{../analysis/charts/}}
-
 \newlist{romanlist}{enumerate}{1}
 \setlist[romanlist]{label=(\roman*), leftmargin=2.2em, itemsep=2pt}
-
 \begin{document}
-% ---------------------- STANDALONE WRAPPER (end) ---------------------
-
-\chapter{Evaluation and Results}
-\label{chap:evaluation}
 
 Having described the proposed three-tier hybrid system in
-Chapter~\ref{chap:solution}, this chapter evaluates it empirically. The aim
+Chapter~3, this chapter evaluates it empirically. The aim
 is twofold: to quantify how well each individual tier performs, and to show
 that the smart hybrid fusion improves upon every single tier on the metric
 that matters most for intrusion detection. Section~\ref{sec:eval-params}
@@ -210,25 +158,89 @@ meaningful and neither is trivially inflated by class skew.
 \label{sec:sim-data}
 
 The corpus combines three sources of HTTP traffic, as introduced in
-Section~\ref{sec:scope}: the CSIC 2010 dataset, real attack payloads from the
-PayloadsAllTheThings repository, and automatically generated synthetic
-traffic. In total it contains $111{,}065$ log lines, balanced to $50\%$
-attack and $50\%$ clean so that the learning algorithms are not biased
-towards either class. The corpus is then partitioned as follows. The
-supervised tier (Tier~2) is trained on $66{,}984$ labelled lines, of which
-$32{,}043$ are attacks and $34{,}941$ are clean. The unsupervised tier
-(Tier~3) is trained, following the one-class principle, on the
-$34{,}941$ clean lines only. The remaining held-out split forms the
-evaluation set of Table~\ref{tab:evalset}.
+Section~\ref{sec:scope}: the CSIC~2010 dataset, real attack payloads drawn
+from the public PayloadsAllTheThings repository, and automatically generated
+synthetic traffic. All three sources are assembled by a single, fully
+reproducible build script,
+\texttt{build\_\allowbreak final\_\allowbreak dataset\_\allowbreak comprehensive.py}.
+Before balancing, the pool contains $111{,}065$ log lines whose provenance is
+detailed in Table~\ref{tab:sources}: the two CSIC subsets supply realistic
+e-commerce traffic, while the synthetic generator adds modern attack classes
+and a controlled variety of benign endpoints.
 
-Every line is processed by the same pipeline described in
-Chapter~\ref{chap:solution}: it is parsed, its URL is decoded over up to
-three layers, and it is converted into the shared $22$-feature vector. The
-ground-truth label of each line is obtained from a marker embedded in the
-synthetic traffic generator and the CSIC conversion, so that the evaluation
-labels are exact rather than estimated. Static-resource requests are
-whitelisted out of the learning tiers, as in production, so that the
-reported numbers reflect the system's real operating behaviour.
+\begin{table}[ht]
+  \centering
+  \caption{Composition of the raw corpus before balancing (the
+    $111{,}065$-line pool assembled by the build script).}
+  \label{tab:sources}
+  \renewcommand{\arraystretch}{1.25}
+  \setlength{\tabcolsep}{8pt}
+  \footnotesize
+  \begin{tabular}{|l|l|r|r|}
+    \hline
+    \textbf{Source} & \textbf{Class} & \textbf{Lines} & \textbf{Share} \\
+    \hline
+    CSIC~2010 (clean)   & Clean  & $36{,}000$  & $32.4\%$ \\
+    CSIC~2010 (attack)  & Attack & $25{,}065$  & $22.6\%$ \\
+    Synthetic (clean)   & Clean  & $25{,}000$  & $22.5\%$ \\
+    Synthetic (attack)  & Attack & $25{,}000$  & $22.5\%$ \\
+    \hline
+    \textbf{Total}      &        & $111{,}065$ & $100\%$ \\
+    \hline
+  \end{tabular}
+\end{table}
+
+The synthetic \emph{attack} traffic is produced as follows. The generator
+draws on a curated set of $448$ real attack payloads organised into six
+categories --- SQL injection, cross-site scripting, XML external entity
+injection, remote command execution, CRLF injection, and LDAP injection ---
+taken from the PayloadsAllTheThings repository. For each of the $25{,}000$
+synthetic attack lines it picks a category and a payload at random and then
+applies a random obfuscation chosen from the raw payload, a single
+URL-encoding, a double URL-encoding, and a space-to-\texttt{\%20}
+substitution; this deliberately exercises the multi-layer decoder of
+Chapter~3 and prevents the models from memorising a fixed surface form. The
+payload is embedded either in the query string of a \texttt{GET} request
+(sixty per cent of the lines) or in the body of a \texttt{POST} request
+(forty per cent), and the line is completed with a random client address, a
+timestamp spread uniformly over a thirty-day window, a status code drawn from
+$\{200,403,500\}$, a response size, and a realistic User-Agent string. A
+hidden marker is appended to the User-Agent so that the ground-truth label of
+every synthetic line is exact rather than inferred.
+
+The synthetic \emph{clean} traffic is generated by the same script in a
+parallel manner. Each of the $25{,}000$ benign lines targets a random path
+from a catalogue of typical application endpoints (for example
+\texttt{/index.html}, \texttt{/api/users}, \texttt{/login}, \texttt{/search},
+static assets, and \texttt{/dashboard}); it is issued as a \texttt{GET} with
+ordinary pagination parameters (eighty per cent) or as a \texttt{POST} with
+ordinary form parameters (twenty per cent), again with a randomised address,
+timestamp, size, and User-Agent, and always returning status~$200$. Because
+these lines are structurally indistinguishable from genuine benign traffic
+but carry no marker, they teach the models the \emph{shape} of normal requests
+rather than any artefact peculiar to a single dataset.
+
+Balancing the corpus to exactly $50\%$ attack and $50\%$ clean is a
+deliberate choice. On a heavily imbalanced set a trivial classifier can reach
+a high accuracy merely by always predicting the majority class, which would
+mask its true discriminative ability; an even split removes this class-prior
+shortcut and makes precision and recall reflect genuine detection skill. The
+attack pool ($50{,}065$ lines) is the limiting class, so the clean pool
+($61{,}000$ lines) is randomly down-sampled to the same size, giving a
+balanced corpus of $100{,}130$ lines. This corpus is shuffled and split
+$70/30$ into $70{,}091$ training and $30{,}039$ evaluation lines. Both splits
+are then passed through the parsing pipeline of Chapter~3 --- each line is
+parsed, its URL decoded over up to three layers, and converted into the shared
+$22$-feature vector --- and the small number of lines that cannot be parsed
+are discarded. This leaves $66{,}984$ usable labelled lines for the supervised
+tier (Tier~2), of which $32{,}043$ are attacks and $34{,}941$ are clean, and an
+evaluation set of $28{,}767$ lines (Table~\ref{tab:evalset}). Following the
+one-class principle, the unsupervised tier (Tier~3) is trained on the
+$34{,}941$ clean training lines only. Because every label is derived from the
+embedded marker rather than estimated, the evaluation labels are exact;
+static-resource requests are whitelisted out of the learning tiers, as in
+production, so that the reported numbers reflect the system's real operating
+behaviour.
 
 \subsection{Baselines and rationale}
 \label{sec:sim-baselines}
@@ -360,7 +372,7 @@ and Figure~\ref{fig:f1rank} ranks the models by F1 score.
 
 \begin{figure}[ht]
   \centering
-  \includegraphics[width=\textwidth]{comprehensive_metrics.png}
+  \includegraphics[width=\textwidth]{Figure/comprehensive_metrics.png}
   \caption{Precision, recall, F1, and F2 of every model, shown as four
            grouped bar charts. Green bars are supervised models, blue bars
            are unsupervised models, and red bars are the hybrid
@@ -370,7 +382,7 @@ and Figure~\ref{fig:f1rank} ranks the models by F1 score.
 
 \begin{figure}[ht]
   \centering
-  \includegraphics[width=0.85\textwidth]{f1_ranking.png}
+  \includegraphics[width=0.85\textwidth]{Figure/f1_ranking.png}
   \caption{Ranking of the detectors by F1 score. The Random Forest leads,
            closely followed by the smart consensus and the Local Outlier
            Factor.}
@@ -409,6 +421,123 @@ tighter boundary around the normal manifold than the global partitioning of
 the Isolation Forest or the single margin of the One-Class SVM, so it admits
 far fewer clean requests as false anomalies. This is precisely why the Local
 Outlier Factor was selected as the operational Tier~3 model.
+
+\subsection{Feature importance analysis of the Random Forest}
+\label{sec:res-featimp}
+
+Because the Random Forest is the strongest single detector, it is worth asking
+\emph{which} of the $22$ features drive its decisions. A tree ensemble exposes
+this directly through the Gini importance of each feature, that is, the total
+reduction in node impurity attributable to splits on that feature, averaged
+over all the trees and normalised to sum to one. Figure~\ref{fig:featimp}
+ranks the $22$ features by this score and Table~\ref{tab:featimp} lists the
+leading contributors together with their cumulative share. This analysis
+serves two purposes: it answers the practical question of which signals matter
+most, and it provides empirical evidence that the hand-crafted feature set of
+Chapter~3 was designed for good reason.
+
+\begin{figure}[ht]
+  \centering
+  \includegraphics[width=0.92\textwidth]{Figure/feature_importance.png}
+  \caption{Gini importance of the $22$ features in the Random Forest (Tier~2),
+           ranked from highest to lowest. Bars are coloured by magnitude:
+           dominant ($\geq 10\%$), supporting ($1$--$10\%$), and marginal
+           ($< 1\%$).}
+  \label{fig:featimp}
+\end{figure}
+
+\begin{table}[ht]
+  \centering
+  \caption{Leading Random Forest features by Gini importance, with cumulative
+           share. The remaining fourteen features together account for the
+           final $15.2\%$.}
+  \label{tab:featimp}
+  \renewcommand{\arraystretch}{1.25}
+  \setlength{\tabcolsep}{8pt}
+  \footnotesize
+  \begin{tabular}{|c|l|r|r|}
+    \hline
+    \textbf{Rank} & \textbf{Feature} & \textbf{Importance} & \textbf{Cumulative} \\
+    \hline
+    1 & \texttt{entropy}                 & $17.9\%$ & $17.9\%$ \\
+    2 & \texttt{longest\_param\_value}    & $16.9\%$ & $34.9\%$ \\
+    3 & \texttt{len\_url}                 & $14.4\%$ & $49.2\%$ \\
+    4 & \texttt{param\_value\_max\_entropy} & $12.5\%$ & $61.8\%$ \\
+    5 & \texttt{path\_depth}              & $7.2\%$  & $69.0\%$ \\
+    6 & \texttt{risk\_ratio}              & $6.3\%$  & $75.2\%$ \\
+    7 & \texttt{status\_code\_indicator}  & $4.8\%$  & $80.0\%$ \\
+    8 & \texttt{raw\_risk\_count}         & $4.8\%$  & $84.8\%$ \\
+    \hline
+    \multicolumn{2}{|l|}{Remaining $14$ features} & $15.2\%$ & $100\%$ \\
+    \hline
+  \end{tabular}
+\end{table}
+
+The ranking is highly interpretable. The four dominant features, which
+together account for $61.8\%$ of the total importance, all measure
+\emph{randomness} or \emph{length}: the Shannon entropy of the request
+(\texttt{entropy}), the length of the longest parameter value
+(\texttt{longest\_param\_value}), the overall URL length (\texttt{len\_url}),
+and the maximum entropy among the parameter values
+(\texttt{param\_value\_max\_entropy}). This matches the intrinsic nature of
+injection attacks: a SQL-injection, cross-site-scripting, or XXE payload is
+typically far longer and far more irregular than a normal parameter, so these
+four signals separate the two classes most sharply. The next tier of features
+--- the depth of the path (\texttt{path\_depth}), the density of risky tokens
+(\texttt{risk\_ratio}), the response status (\texttt{status\_code\_indicator}),
+the raw count of risky tokens (\texttt{raw\_risk\_count}), and the proportion
+of encoded characters (\texttt{encoding\_ratio}) --- adds structural, lexical
+and behavioural corroboration. Together, just \emph{eight} of the $22$ features
+already explain $84.8\%$ of the model's decisions, which shows that the
+representation is compact and that its features are complementary rather than
+redundant.
+
+It is equally important to interpret the features with \emph{low} importance,
+because a low Gini score does not by itself mean a feature is useless. Three
+features score essentially zero on this corpus, and each illustrates a
+different reason. The first, \texttt{unknown\_param\_ratio}, measures how many
+of a request's parameter names are absent from a per-endpoint vocabulary of
+names previously seen for that exact path; it is the signal behind the Tier~1
+parameter-tampering rule. In the training configuration used here that
+vocabulary was not populated, so the feature was constant and the Random
+Forest could not split on it. Far from being superfluous, it is expected to
+become discriminative once the system is deployed in front of a specific
+application and the vocabulary is built from that application's own clean
+logs, at which point it can flag tampering attacks that reuse legitimate-looking
+values under unexpected parameter names. The second, \texttt{referer\_suspicion},
+is zero for a similar reason: every line in both the CSIC and the synthetic
+data carries a placeholder ``\,-\,'' Referer, so the feature has no variance to
+exploit. In real production traffic, where the Referer header varies from
+request to request, the same feature would help detect cross-site request
+forgery, hot-linking, and requests arriving from mismatched or suspicious
+origins. The third, \texttt{path\_special\_chars}, is near-zero for a different
+reason entirely: the information it carries --- the presence of special
+characters in the URL path --- is strongly correlated with, and therefore
+already captured by, the much stronger entropy, length and encoding features,
+so the Random Forest gains almost no additional node purity by splitting on it.
+It nevertheless remains a cheap, interpretable corroborator and would carry
+more weight on traffic where the attack is delivered through the path segment
+rather than the query string.
+
+The same reasoning applies to the small but non-zero features such as
+\texttt{signature\_score} ($0.8\%$), \texttt{is\_post} ($0.5\%$),
+\texttt{suspicious\_ua\_score} ($0.3\%$) and
+\texttt{consecutive\_encoding\_intensity} ($0.2\%$). They contribute little on
+this particular corpus, but they encode signals that become important under
+different threat mixes: \texttt{suspicious\_ua\_score} would rise against
+automated scanners that send anomalous User-Agent strings, and
+\texttt{consecutive\_encoding\_intensity} would rise against payloads hidden
+behind several layers of obfuscating encoding. Two general points follow.
+First, Gini importance is dataset- and correlation-dependent: a feature that is
+constant or redundant on this balanced corpus can become decisive on a
+different traffic distribution, so retaining it improves the system's
+robustness and its ability to generalise to attack types and deployments not
+represented here. Second, several of these low-importance features are
+consumed by the rule-based Tier~1 and the one-class Tier~3 rather than by the
+Random Forest alone, so they still contribute to the overall hybrid even when
+the supervised tier does not rely on them. Since all $22$ features are computed
+in a single inexpensive pass over each log line, keeping the full set costs
+almost nothing while preserving this resilience.
 
 % =====================================================================
 \section{Performance of the Hybrid Fusion Strategies}
@@ -450,7 +579,7 @@ radar chart.
 
 \begin{figure}[ht]
   \centering
-  \includegraphics[width=\textwidth]{model_comparison.png}
+  \includegraphics[width=\textwidth]{Figure/model_comparison.png}
   \caption{Tier and hybrid configuration comparison across the four metrics.
            The dashed line marks the $90\%$ reference level. Both fusion
            strategies exceed every single tier on recall and F2.}
@@ -459,7 +588,7 @@ radar chart.
 
 \begin{figure}[ht]
   \centering
-  \includegraphics[width=0.75\textwidth]{precision_vs_recall.png}
+  \includegraphics[width=0.75\textwidth]{Figure/precision_vs_recall.png}
   \caption{Precision--recall trade-off. The ideal corner is the top-right.
            The hybrid configurations sit in the high-recall, high-precision
            region, while the Isolation Forest and One-Class SVM occupy the
@@ -469,7 +598,7 @@ radar chart.
 
 \begin{figure}[ht]
   \centering
-  \includegraphics[width=0.7\textwidth]{radar_comparison.png}
+  \includegraphics[width=0.7\textwidth]{Figure/radar_comparison.png}
   \caption{Multi-metric radar comparison of the three strongest
            configurations: the Random Forest, the Local Outlier Factor, and
            the smart consensus. The smart consensus dominates on the
@@ -504,6 +633,39 @@ trade-off geometric: the hybrid points are pushed towards the desirable
 top-right corner, away from the low-precision cluster of the Isolation Forest
 and One-Class SVM.
 
+A natural question is how the two probability thresholds that govern the
+consensus were chosen: the $0.5$ at which the Random Forest fires on its own,
+and the $0.3$ at which it is allowed to confirm a Tier~3 anomaly
+(Equation~3.3 of Chapter~3). The two values play different roles and have
+different justifications. The first, $0.5$, is not tuned at all: it is the
+standard decision boundary of a probabilistic classifier, the point at which
+the model estimates an attack to be more likely than a benign request. This is
+the Bayes-optimal threshold when the two kinds of misclassification are treated
+as equally costly, so the Random Forest raises an alert on its own exactly when
+it is more confident of an attack than of a clean request, with no
+application-specific calibration. The second value, $0.3$, is a deliberate,
+principled relaxation rather than an arbitrary number. It is applied
+\emph{only} when the independent anomaly tier has already flagged the request,
+and it rests on the observation that two weak but independent signals are
+jointly stronger than either alone: once the unsupervised tier has raised a
+flag, requiring only a moderate---rather than a majority---supervised suspicion
+to confirm it is sufficient. The specific level, $0.3$, embodies the system's
+recall-first ($F_2$) priority: it is low enough to recover attacks that the
+Random Forest at $0.5$ would have missed but the anomaly tier caught, yet high
+enough to still demand non-trivial supervised agreement, which is precisely
+what filters out the many false positives the anomaly tier would otherwise
+contribute. The thresholds are therefore motivated \emph{theoretically}---$0.5$
+from decision theory and $0.3$ from the corroboration principle and the
+recall-first objective---and their combined effect is then validated
+\emph{empirically} by the comparison in this very section. The two limiting
+cases confirm that the value is sensibly placed: had the lower threshold been
+raised towards $0.5$, the consensus would collapse back onto the Random Forest
+alone and forfeit the recall gain, whereas had it been lowered towards zero, it
+would degenerate into the simple-voting baseline and inherit its low precision
+of $87.78\%$. The chosen value sits between these extremes, and the ablation
+shows it yields the best recall-oriented balance, namely the highest $F_2$
+($96.26\%$) at a precision of $91.19\%$.
+
 It is worth noting how these figures relate to the related work surveyed in
 Chapter 2. Although a direct numeric comparison is
 imperfect because the evaluation protocols and feature sets differ, the
@@ -527,7 +689,7 @@ the missed attacks and the top-right cell ($FP$) being the false alarms.
 
 \begin{figure}[ht]
   \centering
-  \includegraphics[width=\textwidth]{confusion_matrices.png}
+  \includegraphics[width=\textwidth]{Figure/confusion_matrices.png}
   \caption{Confusion matrices of the eight configurations on the same
            $28{,}767$-line evaluation set. For each panel the bottom-left
            cell counts missed attacks ($FN$) and the top-right cell counts
@@ -657,6 +819,5 @@ results demonstrate that the three-tier hybrid design meets its objective of
 recall-oriented, robust, and explainable web intrusion detection. The next
 chapter draws conclusions and outlines directions for future work.
 
-% --------------------- STANDALONE WRAPPER (begin) --------------------
+
 \end{document}
-% ---------------------- STANDALONE WRAPPER (end) ---------------------

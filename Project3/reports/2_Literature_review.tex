@@ -1,44 +1,9 @@
-% =====================================================================
-%  CHAPTER 2 — BACKGROUND AND RELATED WORK
-%  Graduation thesis: A hybrid (signature + AI) web intrusion detection
-%  system operating on Apache HTTP/HTTPS access logs.
-%
-%  HOW TO USE
-%  ----------
-%  * Standalone build: this file compiles on its own (pdflatex twice to
-%    resolve references and the embedded bibliography).
-%  * Integration into your thesis: delete the lines between the two
-%    "STANDALONE WRAPPER" markers (the \documentclass...\begin{document}
-%    block and the matching \end{document}), keep everything from
-%    "\chapter{...}" to the end of the thebibliography environment, and
-%    move the \bibitem entries into your global bibliography (.bib).
-% =====================================================================
-
-% --------------------- STANDALONE WRAPPER (begin) --------------------
-\documentclass[12pt,a4paper]{report}
-\usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
-\usepackage{lmodern}
-\usepackage{amsmath}
-\usepackage{booktabs}
-\usepackage{array}
+\documentclass[../main.tex]{subfiles}
 \usepackage{enumitem}
-\usepackage{graphicx}
-\usepackage{url}
-\usepackage[hidelinks]{hyperref}
-\usepackage{geometry}
-\geometry{margin=1in}
-\usepackage{textcomp}
-
-% Roman-numeral enumerated lists used for the "scientific" listings.
 \newlist{romanlist}{enumerate}{1}
 \setlist[romanlist]{label=(\roman*), leftmargin=2.2em, itemsep=2pt}
-
 \begin{document}
-% ---------------------- STANDALONE WRAPPER (end) ---------------------
 
-\chapter{Background and Related Work}
-\label{chap:background}
 
 This chapter establishes the context, motivation, and the core knowledge
 that the thesis relies upon. Section~\ref{sec:scope} first delimits the
@@ -224,16 +189,38 @@ Beyond classical classifiers, several studies surveyed
 in~\cite{rawashdeh2023} apply deep learning to CSIC 2010. Kim et
 al.~\cite{kim2020} combine a Convolutional Neural Network with a Long
 Short-Term Memory network (CNN with LSTM) and reach an accuracy of about
-$91.54\%$. Of particular relevance to this thesis, Vartouni et
-al.~\cite{vartouni2018} use a Stacked Auto-Encoder---a reconstruction-based
-model with an \emph{anomaly detection} flavour---and obtain an accuracy of
-about $88.32\%$. Betarte et al.~\cite{betarte2018} compare Random Forest,
-K-Nearest Neighbours, and Support Vector Machine, with Random Forest
-performing best in that group. These works reveal two trends: on the one
-hand, complex deep models do not necessarily outperform compact structural
-classifiers on CSIC 2010; on the other hand, the reconstruction-based
-anomaly direction opens up the possibility of detecting novel attacks
-without requiring attack labels during training.
+$91.54\%$. Of particular relevance to this thesis is the work of Vartouni et
+al.~\cite{vartouni2018}, which is the closest prior study to the unsupervised
+tier proposed here and therefore deserves a fuller treatment. Instead of
+training a classifier on labelled attacks, they cast web-attack detection as
+an \emph{anomaly detection} problem. A Stacked Auto-Encoder---a neural network
+trained to compress its input into a low-dimensional code and then reconstruct
+it---is fitted on \emph{normal} requests only, so that it learns a compact
+model of what legitimate traffic looks like; the learned representation is then
+passed to an isolation-based outlier detector, and any request that lies far
+from the learned normal manifold (equivalently, that the network reconstructs
+poorly) is flagged as anomalous. Because the model never observes an attack
+during training, it follows exactly the \emph{one-class learning} principle
+adopted by the third tier of this thesis and can, in principle, detect
+previously unseen attacks without any attack labels. On CSIC 2010 the method
+attains an accuracy of about $88.32\%$. This result is doubly informative for
+the present work: it confirms that the unsupervised, label-free direction is
+viable on the very same dataset, but it also exposes the characteristic
+weakness of a \emph{purely} unsupervised detector. Its verdict rests on an
+anomaly-score threshold, so precision and recall trade off sharply against the
+choice of that threshold, and it possesses neither the calibrated,
+label-grounded confidence of a supervised classifier nor the pinpoint
+precision of an explicit signature. This limitation is the direct motivation
+for letting a supervised model validate the anomaly tier in the present
+design. Betarte et al.~\cite{betarte2018} take a complementary, supervised
+view, comparing Random Forest, K-Nearest Neighbours, and Support Vector
+Machine, with Random Forest performing best in that group. Taken together,
+these works reveal two trends: on the one hand, complex deep models do not
+necessarily outperform compact structural classifiers on CSIC 2010; on the
+other hand, the reconstruction-based anomaly direction opens up the
+possibility of detecting novel attacks without requiring attack labels during
+training---at the cost of the precision and stability that a signature or a
+supervised model would provide.
 
 \subsection{Synthesis and research motivation}
 
@@ -287,7 +274,14 @@ supervised direction yields high accuracy on known attacks but requires
 labelled data and is weak against entirely new attacks. The anomaly
 direction has the potential to catch previously unseen attacks but
 typically suffers from a high false-alarm rate and poor stability across
-algorithms. Second, most studies work on offline pre-processed feature
+algorithms. Crucially, even the studies that move beyond supervised
+learning---most notably the Stacked Auto-Encoder of Vartouni et
+al.~\cite{vartouni2018}, which is itself a single anomaly detector---employ
+one paradigm in isolation: none of the surveyed systems unites
+signature-based, supervised, and unsupervised detection within a single
+decision pipeline. This three-way combination, rather than the choice of any
+individual algorithm, is the precise gap that this thesis sets out to fill.
+Second, most studies work on offline pre-processed feature
 sets; few systems operate directly on raw server logs and handle practical
 situations such as multi-layer encoded payloads or attacks delivered
 through the \texttt{POST} body. Third, the signature-based detection
@@ -760,13 +754,8 @@ decision mechanism, turning the theoretical principles laid out here into a
 complete detection system.
 
 % =====================================================================
-% NOTE: The chapter-local bibliography has been removed. All references
-% (pham2016, althubiti2017, nguyen2011, csic2010, rawashdeh2023, kim2020,
-% vartouni2018, betarte2018, tsai2009, owasp2021, breiman2001,
-% scholkopf1999, breunig2000, liu2008) now live in the global reference.bib
-% and are printed once in the REFERENCE section via \printbibliography.
+% BIBLIOGRAPHY
+% Move these \bibitem entries into your global .bib / thebibliography and
+% renumber to stay consistent with the rest of the thesis.
 % =====================================================================
-
-% --------------------- STANDALONE WRAPPER (begin) --------------------
 \end{document}
-% ---------------------- STANDALONE WRAPPER (end) ---------------------

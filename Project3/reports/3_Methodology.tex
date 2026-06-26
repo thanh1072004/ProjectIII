@@ -1,59 +1,9 @@
-% =====================================================================
-%  CHAPTER 3 — PROPOSED SOLUTION (SYSTEM DESIGN AND ALGORITHMS)
-%  Graduation thesis: A hybrid (signature + AI) web intrusion detection
-%  system operating on Apache HTTP/HTTPS access logs.
-%
-%  NOTE ON FIGURES / ALGORITHMS / FORMULAS
-%  ---------------------------------------
-%  To keep this file compilable with only basic LaTeX packages, the flow
-%  diagram, the six algorithms, and the formulas are NOT typeset here.
-%  Instead, each one is given as a detailed "design specification" block
-%  (clearly marked) describing exactly what the figure / pseudocode /
-%  equation should contain, so it can be produced by the author or a
-%  designer and then dropped in. Search this file for the marker
-%  "[[DESIGN SPEC" to find every place that needs an artifact.
-%
-%  HOW TO USE
-%  ----------
-%  * Standalone build: compiles on its own (run pdflatex twice for refs).
-%    As a standalone document the chapter is numbered 1; inside the thesis
-%    it becomes Chapter 3 automatically.
-%  * Integration: delete the two "STANDALONE WRAPPER" blocks and keep the
-%    content from "\chapter{...}" onward.
-% =====================================================================
-
-% --------------------- STANDALONE WRAPPER (begin) --------------------
-\documentclass[12pt,a4paper]{report}
-\usepackage[utf8]{inputenc}
-\usepackage[T1]{fontenc}
-\usepackage{lmodern}
-\usepackage{amsmath}
-\usepackage{booktabs}
-\usepackage{array}
+\documentclass[../main.tex]{subfiles}
 \usepackage{enumitem}
-\usepackage{graphicx}
-\usepackage{url}
-\usepackage[hidelinks]{hyperref}
-\usepackage{geometry}
-\geometry{margin=1in}
-\usepackage{textcomp}
-\emergencystretch=3em  % absorb minor overfull lines from long identifiers
-
 \newlist{romanlist}{enumerate}{1}
 \setlist[romanlist]{label=(\roman*), leftmargin=2.2em, itemsep=2pt}
-
-% A lightweight, dependency-free box used to hold a "design specification"
-% (the description of a figure/algorithm/formula to be produced later).
-\newenvironment{designspec}[1]
-  {\par\medskip\noindent\begin{tabular}{@{}p{0.97\textwidth}@{}}\hline
-   \textbf{[[DESIGN SPEC]] #1}\\\hline\end{tabular}\par\nopagebreak\smallskip\itshape}
-  {\par\medskip}
-
 \begin{document}
-% ---------------------- STANDALONE WRAPPER (end) ---------------------
 
-\chapter{Proposed Solution}
-\label{chap:solution}
 
 While Chapter 2 established the problem context and the
 theoretical building blocks, this chapter describes the proposed solution
@@ -111,42 +61,16 @@ which correspond directly to the boxes in the diagram:
         Lines format and surfaced on a real-time dashboard.
 \end{romanlist}
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
-  \fbox{\begin{minipage}{0.92\textwidth}
-    \small
-    \textbf{Diagram to be produced.} A top-to-bottom flowchart with a
-    parallel branch in the middle. The recommended layout is:
-    \begin{itemize}[leftmargin=1.4em, itemsep=1pt]
-      \item \emph{Top (input):} a parallelogram (data node) labelled
-            ``Apache access log (one line per request)''.
-      \item A downward arrow to a rectangle ``Parse \& decode URL''.
-      \item A downward arrow to a rectangle ``22-feature extraction''.
-      \item A downward arrow to a rectangle ``Static-resource whitelist
-            filter''.
-      \item From this rectangle, \emph{three arrows fan out in parallel} to
-            three side-by-side boxes: ``Tier~1: Signature + rules'',
-            ``Tier~2: Random Forest ($p_{\text{attack}}$)'', and
-            ``Tier~3: One-class LOF''.
-      \item The three boxes \emph{converge} with three arrows into a diamond
-            (decision node) labelled ``Smart consensus''.
-      \item A downward arrow to a rectangle ``Threat score \& severity
-            bucket''.
-      \item A downward arrow to a parallelogram (output) ``Alert +
-            dashboard (JSONL)''.
-    \end{itemize}
-    Suggested styling: rounded rectangles for processing steps,
-    parallelograms for input/output, a diamond for the consensus decision,
-    and a light grey fill for the three tier boxes to emphasise the parallel
-    stage.
-  \end{minipage}}
-  \caption{End-to-end processing flow of the proposed three-tier hybrid
-           web intrusion detection system.}
+  \includegraphics[width=0.75\textwidth]{Figure/flow.png}
+  \caption{End-to-end processing flow of the proposed three-tier hybrid web intrusion
+detection system.}
   \label{fig:pipeline}
 \end{figure}
 
 The overall scanning procedure, implemented in the function
-``analyze\_log'', formalises this flow. It iterates over the log lines,
+\texttt{analyze\_log}, formalises this flow. It iterates over the log lines,
 applies the parsing and feature steps, evaluates the three tiers (subject to
 the whitelist exemption), and then delegates the final verdict to the
 consensus and scoring procedure detailed in Section~\ref{sec:consensus}.
@@ -185,22 +109,22 @@ as they occur.
 \subsection{Parsing and multi-layer URL decoding}
 
 The first stage converts a raw Apache log line into a normalised structure
-used by every downstream component. The function ``parse\_log\_entry''
+used by every downstream component. The function \texttt{parse\_log\_entry}
 relies on a log parser configured for the Combined Log Format, with a
 fallback to the Common Log Format for lines that lack the
-``Referer''/``User-Agent'' headers. From the request line it
+\texttt{Referer}/\texttt{User-Agent} headers. From the request line it
 extracts the HTTP method, the raw URL, and the protocol; it then URL-decodes
 the URL and splits it into a path, a query string, and a dictionary of
-parameters. The status code, the ``User-Agent'', and the
-``Referer'' headers are also retained, since they feed several
+parameters. The status code, the \texttt{User-Agent}, and the
+\texttt{Referer} headers are also retained, since they feed several
 features described below. The result is a record with the fields
-``path'', ``query'', ``method'', ``status'',
-``user\_agent'', and ``referer'', which constitutes the common
+\texttt{path}, \texttt{query}, \texttt{method}, \texttt{status},
+\texttt{user\_agent}, and \texttt{referer}, which constitutes the common
 input contract for all three tiers.
 
 A subtle but important detail is the handling of encoded payloads. As
 discussed in Chapter 2, attackers hide malicious content
-behind several layers of URL encoding. The helper ``multi\_decode''
+behind several layers of URL encoding. The helper \texttt{multi\_decode}
 therefore decodes the URL repeatedly, up to three iterations, stopping early
 when a further decoding leaves the string unchanged. This recovers the
 original payload and, as a by-product, yields the \emph{encoding depth}
@@ -210,30 +134,78 @@ informative feature.
 \subsection{The shared 22-feature vector}
 
 Both machine learning tiers operate on the same $22$-dimensional feature
-vector, produced by the ``extract\_features'' method. Sharing a single
+vector, produced by the \texttt{extract\_features} method. Sharing a single
 feature space guarantees that the performance gap between the supervised and
 unsupervised tiers reflects the ``labelled versus unlabelled'' distinction
 alone, rather than any difference in representation. The twenty-two features
 fall into three conceptual groups---structural, randomness-and-encoding, and
-semantic-and-contextual---which are described feature by feature below; the
-corresponding source code is shown in Figure~\ref{fig:code-features}.
+semantic-and-contextual---which are summarised in Table~\ref{tab:features} and
+then described feature by feature below; the corresponding source code is shown
+in Figure~\ref{fig:code-features}.
+
+\begin{table}[ht]
+  \centering
+  \caption{The complete $22$-feature vector shared by the two machine-learning
+    tiers, grouped as in the text. ``int'' denotes an integer-valued feature;
+    \texttt{suspicious\_ua\_score}, \texttt{referer\_suspicion} and
+    \texttt{status\_code\_indicator} take a small set of discrete levels.}
+  \label{tab:features}
+  \renewcommand{\arraystretch}{1.2}
+  \setlength{\tabcolsep}{4pt}
+  \footnotesize
+  \begin{tabular}{|c|l|p{5.3cm}|l|}
+    \hline
+    \textbf{\#} & \textbf{Feature} & \textbf{Description} & \textbf{Range} \\
+    \hline
+    \multicolumn{4}{|l|}{\textbf{Structural group (9 features)}} \\
+    \hline
+    1 & \texttt{len\_url}          & Length of the URL (path + query)                      & $\geq 1$ (int) \\
+    2 & \texttt{path\_depth}       & Number of ``\texttt{/}'' separators in the path       & $\geq 0$ (int) \\
+    3 & \texttt{is\_post}          & Whether the request method is POST                    & $0$ or $1$ \\
+    4 & \texttt{param\_count}      & Number of query parameters (``\texttt{=}'' count)     & $\geq 0$ (int) \\
+    5 & \texttt{raw\_risk\_count}  & Count of dangerous metacharacters in the decoded URL  & $\geq 0$ (int) \\
+    6 & \texttt{risk\_ratio}       & \texttt{raw\_risk\_count} divided by the URL length    & $[0,1]$ \\
+    7 & \texttt{keyword\_hits}     & Number of SQL/XSS/LFI keywords in the decoded URL     & $\geq 0$ (int) \\
+    8 & \texttt{encoding\_ratio}   & Proportion of ``\texttt{\%}'' characters in the URL    & $[0,1]$ \\
+    9 & \texttt{entropy}           & Shannon entropy of the decoded URL                    & $\geq 0$ \\
+    \hline
+    \multicolumn{4}{|l|}{\textbf{Randomness-and-encoding group (5 features)}} \\
+    \hline
+    10 & \texttt{param\_value\_max\_entropy}        & Maximum Shannon entropy over the parameter values        & $\geq 0$ \\
+    11 & \texttt{longest\_param\_value}             & Length of the longest parameter value                    & $\geq 0$ (int) \\
+    12 & \texttt{encoding\_depth}                   & URL-decoding passes required (anti-evasion)              & $0$–$3$ (int) \\
+    13 & \texttt{consecutive\_encoding\_intensity}  & Fraction of the URL in consecutive \texttt{\%xx} runs    & $[0,1]$ \\
+    14 & \texttt{param\_names\_anomaly}             & Count of parameter names in a suspicious set            & $\geq 0$ (int) \\
+    \hline
+    \multicolumn{4}{|l|}{\textbf{Semantic-and-contextual group (8 features)}} \\
+    \hline
+    15 & \texttt{suspicious\_ua\_score}     & Suspiciousness of the User-Agent string         & $[0,1]$ \\
+    16 & \texttt{referer\_suspicion}        & Suspiciousness of the Referer header            & $[0,1]$ \\
+    17 & \texttt{status\_code\_indicator}   & HTTP status bucket (2xx/3xx/4xx/5xx)            & $0$–$3$ \\
+    18 & \texttt{signature\_score}          & Tier-1 attack regexes matched (out of four)     & $0$–$4$ (int) \\
+    19 & \texttt{risk\_keyword\_density}    & Fraction of word tokens that are risky keywords & $[0,1]$ \\
+    20 & \texttt{method\_path\_combo\_risk} & Risk from the method + sensitive-path combination & $0$–$3.5$ \\
+    21 & \texttt{path\_special\_chars}      & Count of special characters in the path          & $\geq 0$ (int) \\
+    22 & \texttt{unknown\_param\_ratio}     & Fraction of parameter names unseen for that endpoint & $[0,1]$ \\
+    \hline
+  \end{tabular}
+\end{table}
 
 \paragraph{Structural group (nine features).} This group captures the coarse
 size and shape of the request. It comprises the total URL length
-(``len\_url''), counted over the concatenated path and query; the path
-depth (``path\_depth''), the number of ``/'' separators in the
+(\texttt{len\_url}), counted over the concatenated path and query; the path
+depth (\texttt{path\_depth}), the number of ``\texttt{/}'' separators in the
 path, which grows for deeply nested or traversal-style endpoints; a binary
-POST flag (``is\_post'') recording the request method; the parameter
-count (``param\_count''), taken as the number of ``='' signs in
-the query; the raw count of dangerous metacharacters (such as the
-semicolon, pipe, dollar sign, back-tick, parentheses, angle brackets,
-quotes, braces, and backslash) in the decoded URL
-(``raw\_risk\_count'') together with their density relative to the URL
-length (``risk\_ratio''); the number of SQL, XSS, and LFI keywords found
-in the decoded URL (``keyword\_hits''); the percent-encoding density,
-i.e. the proportion of ``\%'' characters
-(``encoding\_ratio''); and the Shannon entropy of the decoded URL
-(``entropy''). For a string $s$, the Shannon entropy is
+POST flag (\texttt{is\_post}) recording the request method; the parameter
+count (\texttt{param\_count}), taken as the number of ``\texttt{=}'' signs in
+the query; the raw count of dangerous metacharacters such as
+\texttt{; | \$ ` ( ) < > ' " \{ \} \textbackslash} in the decoded URL
+(\texttt{raw\_risk\_count}) together with their density relative to the URL
+length (\texttt{risk\_ratio}); the number of SQL, XSS, and LFI keywords found
+in the decoded URL (\texttt{keyword\_hits}); the percent-encoding density,
+i.e. the proportion of ``\texttt{\%}'' characters
+(\texttt{encoding\_ratio}); and the Shannon entropy of the decoded URL
+(\texttt{entropy}). For a string $s$, the Shannon entropy is
 \begin{equation}
   H(s) = -\sum_{c \in \Sigma} \frac{n_c}{|s|}\,\log_2 \frac{n_c}{|s|},
   \label{eq:entropy}
@@ -250,42 +222,42 @@ are all hallmarks of an injection or buffer-overflow attempt.
 \paragraph{Randomness-and-encoding group (five features).} This group
 quantifies obfuscation and the multi-layer encoding evasion discussed in
 Chapter 2. It contains the maximum Shannon entropy taken over all individual
-parameter values (``param\_value\_max\_entropy''), which isolates a
+parameter values param\_value\_max\_entropy, which isolates a
 single high-entropy field even when the rest of the URL looks ordinary; the
-length of the longest parameter value (``longest\_param\_value''), which
+length of the longest parameter value (\texttt{longest\_param\_value}), which
 flags an oversized payload smuggled into one field; the encoding depth
-(``encoding\_depth''), the number of URL-decoding passes that were
+(\texttt{encoding\_depth}), the number of URL-decoding passes that were
 actually required (from $0$ up to $3$) before the payload stopped changing,
 which directly measures how many layers of encoding the attacker stacked; the
-consecutive-encoding intensity (``consecutive\_encoding\_intensity''),
-the fraction of the URL occupied by runs of consecutive ``\%xx''
+consecutive-encoding intensity (\texttt{consecutive\_encoding\_intensity}),
+the fraction of the URL occupied by runs of consecutive \texttt{\%xx}
 sequences, which is high for heavily encoded payloads; and the number of
-parameter names drawn from a curated suspicious set such as ``cmd'',
-``exec'', ``file'', or ``passwd''
-(``param\_names\_anomaly'').
+parameter names drawn from a curated suspicious set such as \texttt{cmd},
+\texttt{exec}, \texttt{file}, or \texttt{passwd}
+(\texttt{param\_names\_anomaly}).
 
 \paragraph{Semantic-and-contextual group (eight features).} This group
 encodes domain knowledge about how attacks differ from legitimate traffic. It
-comprises the suspicious-User-Agent score (``suspicious\_ua\_score''), a
-value in $[0,1]$ that is maximal for a known scanner string (``sqlmap'',
-``nikto'', and the like), moderate for an automated client, and high for
+comprises the suspicious-User-Agent score (\texttt{suspicious\_ua\_score}), a
+value in $[0,1]$ that is maximal for a known scanner string (\texttt{sqlmap},
+\texttt{nikto}, and the like), moderate for an automated client, and high for
 a missing User-Agent; the Referer-suspicion score
-(``referer\_suspicion''), likewise in $[0,1]$, which rises when the
+(referer\_suspicion), likewise in $[0,1]$, which rises when the
 Referer header itself contains attack tokens or is heavily percent-encoded;
-the status-code indicator (``status\_code\_indicator''), a small bucket
+the status-code indicator (status\_code\_indicator), a small bucket
 of the HTTP response status ($0$ for 2xx, $1$ for 3xx, $2$ for 4xx, $3$ for
 5xx) that captures error-inducing requests; the signature score
-(``signature\_score''), the number of Tier-1 attack regular expressions
+(signature\_score), the number of Tier-1 attack regular expressions
 (out of four) that match the decoded payload, which feeds the signature
 evidence back into the learning tiers; the risk-keyword density
-(``risk\_keyword\_density''), the fraction of word tokens that are
+(risk\_keyword\_density), the fraction of word tokens that are
 dangerous keywords; the method-and-path combination risk
-(``method\_path\_combo\_risk''), which rises for sensitive paths such as
-``/admin'' or ``/login'' and for write methods such as ``PUT''
-or ``DELETE''; the count of special characters in the path itself
-(``path\_special\_chars''), which exposes traversal or injection embedded
+(method\_path\_combo\_risk), which rises for sensitive paths such as
+\texttt{/admin} or \texttt{/login} and for write methods such as \texttt{PUT}
+or \texttt{DELETE}; the count of special characters in the path itself
+(path\_special\_chars), which exposes traversal or injection embedded
 in the path rather than in the query; and the unknown-parameter ratio
-(``unknown\_param\_ratio''), the fraction of the request's parameter
+(\texttt{unknown\_param\_ratio}), the fraction of the request's parameter
 names that were never observed on that exact endpoint during training---the
 feature that exposes the parameter-name-mutation attacks pervasive in the
 CSIC dataset.
@@ -313,15 +285,10 @@ steps are:
         and return it.
 \end{enumerate}
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
-  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.2cm}
-    \textit{[Insert a screenshot of the ``extract\_features()'' method
-    and the ``FEATURE\_NAMES'' list from ``models/ai\_detector.py''
-    here.]}\vspace{2.2cm}}}
-  % Replace the box above with: \includegraphics[width=0.9\textwidth]{code_extract_features.png}
-  \caption{Source code of the 22-feature extraction routine
-           (``extract\_features'' in ``ai\_detector.py'').}
+  \includegraphics[width=0.75\textwidth]{Figure/22_features.png}
+  \caption{Source code of the 22-feature extraction routine} 
   \label{fig:code-features}
 \end{figure}
 
@@ -379,44 +346,91 @@ source code are shown in Figure~\ref{fig:code-regex}.
   \end{tabular}
 \end{table}
 
-The first seven rules are purely pattern-based and stateless. Their design
-reflects a deliberate effort to balance coverage against false positives. For
-example, the SQL-injection expression was broadened beyond the classic
-``digit-equals-digit'' tautology (``1=1'') to also match the
-\emph{quoted, letter-based} tautologies such as ``'OR'a'='a'' that
-dominate the CSIC dataset, because the narrower pattern missed the majority
-of real CSIC payloads. The command-injection expression requires a
-shell metacharacter (a semicolon, pipe, double ampersand, dollar sign, or
-back-tick) \emph{immediately before} a known binary name, which keeps the
-benign word ``cat'' in a product description from triggering the rule. The
-remote-file-inclusion rule inspects parameter \emph{values} rather than the
-whole URL, so that a legitimate path containing ``http'' does not raise
-an alert.
+The patterns were not chosen arbitrarily: each rule encodes a deliberate
+design decision that trades attack coverage against the risk of false alarms.
+The rationale behind the nine rules is as follows.
 
-The last two rules are stateful: they consult a \emph{per-path parameter
-vocabulary} that the system learns at training time, recording for every
-endpoint the set of parameter names that ever appeared on it. The
-method-tampering rule fires when one of the methods ``PUT'',
-``DELETE'', ``PATCH'', ``TRACE'', or ``CONNECT'' is used
-on an endpoint that is not part of an API surface, since such methods are
-rarely legitimate on ordinary pages. The parameter-tampering rule fires when
-a request carries a parameter name that was never observed on that exact path
-during training; this is the mechanism that catches the frequent
-name-mutation attacks in CSIC, for example renaming ``modo'' to
-``modoA'' or ``precio'' to ``precioA''.
+\begin{romanlist}
+  \item \textbf{SQL injection.} The expression keys on the structural
+        invariants of an injection rather than on specific values: the
+        data-manipulation keywords (\texttt{union select}, \texttt{drop table}),
+        the comment markers (\texttt{--}, \texttt{\#}, \texttt{/*}) that
+        truncate the original query, and boolean tautologies. Critically, it
+        was broadened beyond the classic numeric tautology \texttt{1=1} to also
+        match the \emph{quoted, letter-based} forms such as \texttt{'OR'a'='a},
+        because these dominate the CSIC payloads and the narrower numeric
+        pattern alone missed the majority of the real injections in the
+        dataset.
+  \item \textbf{Cross-site scripting.} The rule matches the delivery
+        mechanisms an attacker cannot avoid---the \texttt{<script} opener, the
+        \texttt{javascript:} scheme, event handlers (\texttt{onerror=},
+        \texttt{onload=}) and sink calls (\texttt{eval(}, \texttt{alert(})---
+        rather than any particular script body. Targeting the carrier instead
+        of the content keeps the rule general across variants while avoiding
+        the flood of false positives that matching a bare \texttt{<} or
+        \texttt{>} would produce.
+  \item \textbf{Path traversal / LFI.} The rule looks for the traversal
+        sequence itself (\texttt{../}, \texttt{..\textbackslash}) together with
+        a short list of canonical targets (\texttt{/etc/passwd},
+        \texttt{/proc/self}, \texttt{win.ini}), not for an isolated
+        \texttt{..}, because the dot-dot-slash sequence and these well-known
+        system files are the true signature of traversal, whereas a lone
+        \texttt{..} occurs in many benign URLs.
+  \item \textbf{Command injection.} The expression requires a shell
+        metacharacter (\texttt{;}, \texttt{|}, \texttt{\&\&}, \texttt{\$}, or a
+        back-tick) \emph{immediately before} a known binary name
+        (\texttt{rm}, \texttt{cat}, \texttt{wget}, \texttt{curl},
+        \texttt{bash}, \dots). This adjacency requirement is the key decision:
+        it captures the command-chaining syntax that real injection needs,
+        while preventing the benign word ``cat'' in a product description from
+        triggering the rule.
+  \item \textbf{Remote file inclusion.} The rule inspects parameter
+        \emph{values} for a leading \texttt{http://}, \texttt{https://} or
+        \texttt{ftp://}, not the URL as a whole, because RFI works by passing a
+        remote URL as a parameter so that the server fetches it; restricting
+        the match to values prevents a legitimate path that merely contains
+        ``http'' from raising an alert.
+  \item \textbf{Sensitive-file access.} Rather than a generic ``hidden file''
+        rule, it enumerates concrete high-value targets (\texttt{.env},
+        \texttt{.git/config}, \texttt{wp-config.php}, \texttt{.bak},
+        \texttt{.sql}, \texttt{phpinfo.php}). These specific files leak
+        credentials or source code and are the actual objective of
+        reconnaissance, so naming them explicitly yields high precision with
+        negligible false positives.
+  \item \textbf{Scanner tools.} This rule reads the \emph{User-Agent} header
+        and matches the default identifiers of common tools (\texttt{sqlmap},
+        \texttt{nikto}, \texttt{nmap}, \texttt{acunetix}, \dots). Inspecting
+        the header rather than the payload catches automated reconnaissance
+        early and cheaply; it is deliberately conservative---only well-known
+        default strings---so that a deliberately renamed agent is left for the
+        learning tiers to catch instead of weakening this rule's precision.
+  \item \textbf{HTTP method tampering.} The rule flags the methods
+        \texttt{PUT}, \texttt{DELETE}, \texttt{PATCH}, \texttt{TRACE} and
+        \texttt{CONNECT}, but \emph{only} on non-API paths. This API exemption
+        is the central design decision: REST interfaces legitimately use these
+        verbs for create, update and delete operations on endpoints such as
+        \texttt{/api/}, \texttt{/rest/}, \texttt{/v1/} or \texttt{/graphql}, so
+        flagging them there would generate constant false positives. On an
+        ordinary content page, by contrast, the same write and diagnostic
+        methods are essentially never legitimate, so conditioning the rule on
+        the path turns an otherwise noisy signal into a precise one.
+  \item \textbf{Parameter tampering.} This stateful rule consults a per-path
+        vocabulary of parameter names learned from clean traffic, and fires
+        when a request carries a name that was never observed on that exact
+        endpoint. Learning the legitimate names per endpoint, rather than
+        hard-coding them, lets the rule adapt to any application and catch the
+        name-mutation attacks pervasive in CSIC---for example renaming
+        \texttt{modo} to \texttt{modoA} or \texttt{precio} to
+        \texttt{precioA}---which no fixed signature could anticipate.
+\end{romanlist}
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
-  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.2cm}
-    \textit{[Insert a screenshot of the regular-expression definitions
-    (``SQLI\_RE'', ``XSS\_RE'', ``LFI\_RE'',
-    ``CMD\_INJ\_RE'', ``SENSITIVE\_FILE\_RE'',
-    ``SCANNER\_UA\_RE'') from ``apache\_log.py'' here.]}\vspace{2.2cm}}}
-  % Replace the box above with: \includegraphics[width=0.9\textwidth]{code_regex_rules.png}
-  \caption{Source code of the Tier~1 signature regular expressions in
-           ``apache\_log.py''.}
+  \includegraphics[width=\textwidth]{Figure/tier1.png}
+  \caption{Source code of the Tier~1 signature regular expressions in apache\_log.py.}
   \label{fig:code-regex}
 \end{figure}
+
 
 \subsection{Rule evaluation}
 
@@ -426,12 +440,12 @@ applied, so that multi-layer encoded attacks such as a triple-encoded SQL
 tautology are normalised back to their canonical form and can be matched.
 Two of the rules are stateful and depend on the per-path vocabulary learned
 during training. The method-tampering rule fires when an unusual HTTP method
-(``PUT'', ``DELETE'', ``PATCH'', ``TRACE'',
-``CONNECT'') is used on a non-API endpoint. The parameter-tampering
+(\texttt{PUT}, \texttt{DELETE}, \texttt{PATCH}, \texttt{TRACE},
+\texttt{CONNECT}) is used on a non-API endpoint. The parameter-tampering
 rule fires when a request carries a parameter name that was never seen on
 that exact path during training, which is the mechanism that catches CSIC's
 frequent name-mutation attacks (for example
-``modo''~$\rightarrow$~``modoA''). The rule-evaluation procedure
+\texttt{modo}~$\rightarrow$~\texttt{modoA}). The rule-evaluation procedure
 proceeds as follows:
 
 \begin{enumerate}[leftmargin=1.8em, itemsep=2pt]
@@ -450,17 +464,12 @@ proceeds as follows:
 \end{enumerate}
 
 Figure~\ref{fig:code-detect} shows the implementation of this procedure in
-the ``detect\_rule\_based'' function.
+the \texttt{detect\_rule\_based} function.
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
-  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.0cm}
-    \textit{[Insert a screenshot of the ``detect\_rule\_based()''
-    function (and the ``multi\_decode'' loop) from
-    ``apache\_log.py'' here.]}\vspace{2.0cm}}}
-  % Replace the box above with: \includegraphics[width=0.9\textwidth]{code_detect_rule_based.png}
-  \caption{Source code of the Tier~1 rule-evaluation routine
-           (``detect\_rule\_based'' in ``apache\_log.py'').}
+  \includegraphics[width=\textwidth]{Figure/detect_tier1.png}
+  \caption{Source code of the Tier~1 rule-evaluation routine.}
   \label{fig:code-detect}
 \end{figure}
 
@@ -511,19 +520,14 @@ but a calibrated probability, obtained by averaging the per-tree votes:
   \label{eq:rfproba}
 \end{equation}
 where $T_b(x)$ is the prediction of the $b$-th tree. This is exactly the
-quantity returned by the ``predict\_proba'' method and consumed by the
+quantity returned by the \texttt{predict\_proba} method and consumed by the
 consensus rule. Figure~\ref{fig:code-rf} shows the training and inference
 code of the supervised tier.
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
-  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.0cm}
-    \textit{[Insert a screenshot of the ``train()'' and
-    ``predict\_proba()'' methods of the ``SupervisedDetector''
-    class from ``models/supervised\_detector.py'' here.]}\vspace{2.0cm}}}
-  % Replace the box above with: \includegraphics[width=0.9\textwidth]{code_supervised.png}
-  \caption{Source code of the supervised Random Forest tier
-           (``supervised\_detector.py'').}
+  \includegraphics[width=\textwidth]{Figure/rf_train.png}
+  \caption{Source code of the supervised Random Forest tier.}
   \label{fig:code-rf}
 \end{figure}
 
@@ -583,18 +587,13 @@ The mathematical formulation of the three one-class estimators (the local
 reachability density and Local Outlier Factor score, the isolation path
 length and anomaly score, and the One-Class SVM margin objective) was given
 in Chapter 2; Figure~\ref{fig:code-lof} shows how the chosen estimator is
-trained on clean data in the ``train'' method of the
-``LogAnomalyDetector'' class.
+trained on clean data in the \texttt{train} method of the
+\texttt{LogAnomalyDetector} class.
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
-  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.0cm}
-    \textit{[Insert a screenshot of the ``train()'' method of the
-    ``LogAnomalyDetector'' class (clean-only fitting of LOF/IF/OCSVM)
-    from ``models/ai\_detector.py'' here.]}\vspace{2.0cm}}}
-  % Replace the box above with: \includegraphics[width=0.9\textwidth]{code_oneclass.png}
-  \caption{Source code of the unsupervised one-class training routine
-           (``ai\_detector.py'').}
+  \includegraphics[width=\textwidth]{Figure/sup_train.png}
+  \caption{Source code of the unsupervised one-class training routine.}
   \label{fig:code-lof}
 \end{figure}
 
@@ -688,22 +687,17 @@ Figure~\ref{fig:code-consensus} shows the implementation of this fusion rule,
 where the boolean verdict of Equation~\eqref{eq:consensus} is computed in a
 single expression over the three tier outputs.
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
-  \fbox{\parbox{0.9\textwidth}{\centering\vspace{1.8cm}
-    \textit{[Insert a screenshot of the smart-consensus decision logic
-    (the ``should\_alert''/``is\_attack'' expression and the
-    threat-score accumulation) from ``apache\_log.py'' here.]}\vspace{1.8cm}}}
-  % Replace the box above with: \includegraphics[width=0.9\textwidth]{code_consensus.png}
-  \caption{Source code of the smart hybrid consensus and threat-scoring logic
-           in ``apache\_log.py''.}
+  \includegraphics[width=\textwidth]{Figure/smart_hybrid.png}
+  \caption{Source code of the smart hybrid consensus and threat-scoring logic.}
   \label{fig:code-consensus}
 \end{figure}
 
 A practical advantage of this design is its \emph{explainability}: because
 the verdict is a transparent combination of three named signals, every alert
 can be annotated with the tiers that contributed to it (for example
-``REGEX(SQL\_INJECTION) + SUPERVISED(RF, p=0.98)''), which helps the
+``\texttt{REGEX(SQL\_INJECTION) + SUPERVISED(RF, p=0.98)}''), which helps the
 analyst triage quickly. As reported for the full pipeline, the smart
 consensus achieves a precision of $91.19\%$, a recall of $97.62\%$, an F1 of
 $94.30\%$, and an F2 of $96.26\%$---the highest F2 in the system, confirming
@@ -726,23 +720,20 @@ enter the system and how the results are delivered.
 The static-scan mode is intended for the offline, batch analysis of a log
 file that has already been collected---for example for a forensic audit of
 historical traffic or for the reproducible evaluation of the models. It is
-invoked from the command line by passing the ``scan'' action, the path
-to the log file, and the desired Tier-3 model, as in the command
-\begin{quote}\small\ttfamily
-python apache\_log.py scan <logfile> lof
-\end{quote}
-The system then reads the
+invoked from the command line by passing the \texttt{scan} action, the path
+to the log file, and the desired Tier-3 model, as in
+\texttt{python apache\_log.py scan <logfile> lof}. The system then reads the
 file line by line and, for every request, runs the full pipeline and produces
-two output files in JSON Lines format. The first, ``scan\_results.jsonl'',
+two output files in JSON Lines format. The first, \texttt{scan\_results.jsonl},
 contains one record \emph{per log line}---both clean and attack---each
 carrying the verdict, the threat score, the severity level, and the list of
 tiers that contributed, so that the outcome of every request can be audited.
-The second, ``alerts.jsonl'', contains only the lines judged to be
+The second, \texttt{alerts.jsonl}, contains only the lines judged to be
 attacks, in a compact alert format. At the end of the scan the system prints
 a summary that reports the total number of lines processed, the split between
 clean and attack, and the distribution of alerts across the
 \textsc{critical}, \textsc{high}, \textsc{medium}, and \textsc{low} severity
-levels. A representative record from ``scan\_results.jsonl'' is shown
+levels. A representative record from scan\_results.jsonl is shown
 below:
 
 \begin{quote}\small\ttfamily
@@ -757,17 +748,14 @@ The real-time monitoring mode turns the system into a live sensor that
 analyses requests as they arrive. It reads log lines from standard input,
 which lets it be attached directly to a growing server log with a single
 shell pipeline, for example
-\begin{quote}\footnotesize\ttfamily
-tail -F /var/log/apache2/access.log |\\
-\hspace*{1.5em}python apache\_log.py monitor /dev/null lof
-\end{quote}
-Every incoming line is passed through the identical
+"tail -F /var/log/apache2/access.log | python apache\_log.py monitor
+/dev/null lof". Every incoming line is passed through the identical
 three-tier consensus, and whenever a request is judged to be an attack the
 system emits a colour-coded alert on the console---the colour reflecting the
 severity level---showing the timestamp, the source IP address, the aggregated
 threat score, the contributing tiers, and the offending request. In parallel,
 each alert is appended as a structured record to
-``runtime/monitor\_alerts.jsonl''. A companion dashboard, implemented
+runtime/monitor\_alerts.jsonl. A companion dashboard, implemented
 with Streamlit, continuously tails this file and presents the information
 visually: key-performance-indicator cards (such as the detection rate and the
 false-positive rate), a live feed of the most recent alerts, the most active
@@ -778,24 +766,17 @@ Figure~\ref{fig:alert-monitor} shows the console of the real-time monitor at
 the moment an attack is detected, and Figure~\ref{fig:dashboard} shows the
 corresponding view on the dashboard.
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
-  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.2cm}
-    \textit{[Insert a screenshot of the real-time monitor console at the
-    moment an alert is raised (the colour-coded ``[CRITICAL]/[HIGH]''
-    line with IP, threat score, tiers, and request) here.]}\vspace{2.2cm}}}
-  % Replace the box above with: \includegraphics[width=0.9\textwidth]{screenshot_monitor_alert.png}
+  \includegraphics[width=\textwidth]{Figure/real_time.png}
   \caption{Real-time monitoring console raising an alert the moment an attack
            is detected.}
   \label{fig:alert-monitor}
 \end{figure}
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
-  \fbox{\parbox{0.9\textwidth}{\centering\vspace{2.2cm}
-    \textit{[Insert a screenshot of the Streamlit dashboard (KPI cards, live
-    alert feed, top source IPs, threat-level distribution) here.]}\vspace{2.2cm}}}
-  % Replace the box above with: \includegraphics[width=0.9\textwidth]{screenshot_dashboard.png}
+  \includegraphics[width=\textwidth]{Figure/dashboard.png}
   \caption{Real-time monitoring dashboard summarising the live alert feed and
            key performance indicators.}
   \label{fig:dashboard}
@@ -826,6 +807,4 @@ protecting a running server. The next chapter evaluates this solution
 empirically, comparing the individual tiers and the hybrid configurations on
 the benchmark dataset.
 
-% --------------------- STANDALONE WRAPPER (begin) --------------------
 \end{document}
-% ---------------------- STANDALONE WRAPPER (end) ---------------------

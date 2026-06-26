@@ -3,7 +3,7 @@
 BUILD FINAL COMPREHENSIVE DATASET
 
 Combine:
-1. Synthetic attacks: 25,000 (from 748 GitHub payloads with 5-8 encoding variations)
+1. Synthetic attacks: 25,000 (from 448 GitHub payloads with 5-8 encoding variations)
 2. Synthetic clean: 25,000 (random normal web traffic)
 3. CSIC clean: 36,000 (from csic_clean.log)
 4. CSIC attack: 25,065 (from csic_attack.log)
@@ -33,7 +33,7 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 try:
     from payloads_from_github import GITHUB_PAYLOADS_DB
     PAYLOADS_DB = GITHUB_PAYLOADS_DB
-    print("[INFO] Using 748 payloads from GitHub")
+    print("[INFO] Using 448 payloads from GitHub")
 except ImportError:
     print("[ERROR] GitHub payloads not found!")
     sys.exit(1)
@@ -287,7 +287,7 @@ def main():
     print(f"\nTier 3 Clean-Only Training: {len(clean_only):,} logs")
 
     print(f"\nData Sources:")
-    print(f"  Synthetic attack: 25,000 (748 GitHub payloads)")
+    print(f"  Synthetic attack: 25,000 (448 GitHub payloads)")
     print(f"  Synthetic clean: 25,000")
     print(f"  CSIC attack: {len(csic_attack):,}")
     print(f"  CSIC clean: {len(csic_clean):,}")

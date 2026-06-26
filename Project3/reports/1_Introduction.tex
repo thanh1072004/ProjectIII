@@ -1,0 +1,56 @@
+\documentclass[../main.tex]{subfiles}
+\begin{document}
+
+\section{Problem Statement}
+\label{sec:dvd}
+The rapid development of the Internet and web applications has brought immense benefits, transforming how organizations and individuals interact and conduct transactions globally. However, the increasing reliance on web applications has also introduced critical security risks. According to a security threat report by Imperva, up to 75\% of global cyberattacks specifically target web applications. Notably, this survey also reveals that the financial damage caused by web attacks to organizations is over 100 times greater than that of malware, and 50 times greater than the devastation caused by standard viruses or worms. Common attack vectors such as injection flaws (e.g., SQL or OS Injection), Cross-Site Scripting (XSS), Broken Access Control, or Cross-Site Request Forgery (CSRF) are continuously exploited by hackers to steal sensitive information, seize control, and disrupt services. The resulting consequences include not only severe financial losses but also significant damage to corporate reputation.
+
+In this context, Web Intrusion Detection has become an urgent requirement to maintain the integrity, confidentiality, and availability of network systems. Nevertheless, detecting these attacks is becoming increasingly difficult. Traditional defense systems primarily rely on pattern-matching techniques against HTTP/HTTPS request contents. This technique is proving ineffective against sophisticated evasion tactics employed by attackers, typically multi-level URL decoding or concealing malicious payloads within complex POST parameters. Therefore, this thesis addresses the challenge of building an intrusion detection system (IDS) capable of automatically and accurately identifying anomalous behaviors from system logs. Researching and developing a system that adapts to evolving attack variants holds immense practical significance, serving as a crucial security checkpoint for information technology infrastructure.
+
+
+\section{Background and Problems of Research} 
+\label{sec:giaiphap}
+Current research on intrusion detection systems predominantly follows two main approaches: signature-based systems and anomaly-based systems utilizing machine learning techniques. For the first approach, methods employing rule sets (such as Regular Expressions) provide exceptionally fast scanning speeds and near-absolute precision for previously known attack patterns. For the second approach, recent studies have applied diverse machine learning algorithms—such as Random Forest, Logistic Regression, Decision Tree, or Multi-layer Perceptron—on standard datasets like CSIC 2010 HTTP. These models demonstrate high flexibility in classifying network traffic and detecting attack variants through the statistical analysis of large datasets.
+
+However, upon deeper analysis, current standalone solutions reveal severe limitations in performance and feasibility when deployed in real-world environments. Firstly, regarding traditional rule-based methods, the system's most prominent characteristic is its conservatism. Analysis of large datasets indicates that while rule-based methods can achieve a precision of over 99\%, their detection rate (recall) is remarkably low, plateauing at approximately 24\%. This implies that the system easily overlooks the majority of novel attack variants or attacks utilizing evasion techniques not defined in the rule database.
+
+Secondly, concerning supervised machine learning methods, models depend entirely on the quality and volume of pre-labeled training data. Collecting and labeling attack data consumes significant time and resources. Furthermore, although models like Random Forest generalize well to identify variants, they remain completely ineffective against completely novel attacks (zero-day attacks) due to the absence of historical data for learning.
+
+Thirdly, to resolve the challenge of novel attacks, research has shifted towards unsupervised learning or the one-class learning principle, where models only learn the "normal" behavior of the network and flag any deviation as an anomaly. Although algorithms like Local Outlier Factor (LOF) or Isolation Forest (IF) exhibit high sensitivity (recall) to subtle anomalies, they introduce the risk of generating massive false positive rates. Any valid alteration in web traffic (e.g., a newly deployed feature) might be misidentified as an attack, leading to alert fatigue for system administrators.
+
+\section{Research Objectives and Conceptual Framework}
+The core objective of this thesis is to research and develop a comprehensive web attack detection system capable of solving a critical dilemma: balancing a high detection rate (recall) while maintaining the false positive rate at a bare minimum. Simultaneously, the system must be capable of processing sophisticated evasion techniques through in-depth analysis of HTTP request components.
+
+To achieve this objective, the thesis proposes a 3-Tier Hybrid IDS architecture. Instead of relying on a standalone algorithm, this solution integrates the most superior characteristics of rule-based methods, supervised learning, and unsupervised anomaly detection. The strategy to resolve the issues highlighted in Section 0.2 is explicitly designed through the following three-tier architecture.
+
+Tier 1 - Regular Expressions and Vocabulary Rules: To overcome the latency of machine learning models and filter out known risks, this tier functions as a high-speed pre-processor. The system employs strictly defined rule sets to swiftly identify obvious attack patterns such as SQL Injection, XSS, or Directory Traversal.
+
+Tier 2 - Supervised Learning: Addressing the high false-negative rate of Tier 1, Tier 2 applies the Random Forest Classifier algorithm. This algorithm learns attack patterns based on labeled data. The core of this solution is passing data through an advanced 22-feature extraction pipeline, which evaluates details such as encoding depth, parameter entropy, and POST body complexity. This provides high-confidence detection capabilities against attack variants.
+
+Tier 3 - Unsupervised Anomaly Detection: To counter zero-day attacks unrecognizable by Tier 2, Tier 3 utilizes the Local Outlier Factor (LOF) algorithm trained under the one-class learning principle entirely on clean data. The model evaluates the local density of HTTP requests and isolates behaviors that deviate from the normal data distribution.
+
+Smart Hybrid Consensus: To resolve the high false-positive rate issue of Tier 3's unsupervised models, the thesis proposes a consensus mechanism combining outputs from all three tiers. Accordingly, the confidence of Tier 2 is utilized to validate anomalous alerts from Tier 3, significantly reducing false alarms while sustaining the overall sensitivity of the system.
+
+\section{Contributions}
+With the established solution framework, this thesis contributes the following primary theoretical and practical outcomes:
+
+\begin{enumerate}
+\item The thesis successfully proposes and constructs a 3-Tier Hybrid attack detection architecture. The sequential integration of Regex rules, supervised learning, and unsupervised machine learning provides comprehensive analysis, overcoming the weaknesses of traditional IDS.
+\item The thesis develops a complete Feature Engineering pipeline comprising 22 advanced dimensional features. This extractor supports intact analysis of POST body contents and multi-level URL decoding (from 3 to 8 layers), directly contributing to the neutralization of attackers' encoding evasion techniques.
+\item The thesis designs and implements a Smart Consensus mechanism based on risk compensation across tiers. Practical testing proves this mechanism reduces the false positive rate by 38\% compared to relying solely on standalone unsupervised models.
+\item Regarding empirical performance, the thesis evaluated the system on a large-scale, balanced dataset comprising 111,065 logs (combining the CSIC 2010 database with synthetic traffic). The proposed solution achieved outstanding results with an F1-score of 94.30\%, a recall of 97.62\%, and an IDS standard F2-score of 96.26\%, demonstrating its readiness for integration into real-world network monitoring environments.
+\end{enumerate}
+
+\section{Organization of Thesis}
+The remainder of this thesis report is organized according to the following structure.
+
+Chapter 2 presents an overview of related research, alongside core theoretical foundations. The chapter's content clarifies common web vulnerabilities based on OWASP standards, text feature extraction methods, and the mathematical foundations of applied machine learning algorithms such as Random Forest, Logistic Regression, and Local Outlier Factor.
+
+In Chapter 3, the 3-Tier Hybrid System architecture is introduced and analyzed in detail. This chapter details the overall operational flowchart, the 22-feature extraction pipeline for machine learning, the handling mechanism for POST parameters and multi-level URLs, the internal operational principles of each analytical tier (Tier 1, Tier 2, Tier 3), and the decision-making algorithm of the Smart Consensus mechanism.
+
+Chapter 4 focuses on the system evaluation and experimental process. The content includes a detailed description of the preprocessing methodology and dataset construction from the initial 111,065 log samples, algorithmic training configurations based on the One-class learning principle, as well as an in-depth presentation of performance evaluation metrics (Precision, Recall, F1-score, F2-score) comparing standalone models with the hybrid configuration.
+
+Finally, Chapter 5 summarizes all contributions and practical values achieved by the thesis. This chapter objectively analyzes the remaining limitations of the system, such as the specificity of the training data or the limits on decodable encryption layers, thereby proposing directions for future expansion and improvement.
+
+
+\end{document}
