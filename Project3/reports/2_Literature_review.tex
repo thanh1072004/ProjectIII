@@ -5,6 +5,10 @@
 \begin{document}
 
 
+\emergencystretch=3em
+\renewcommand{\_}{\textunderscore\allowbreak}
+\raggedbottom
+
 This chapter establishes the context, motivation, and the core knowledge
 that the thesis relies upon. Section~\ref{sec:scope} first delimits the
 scope of the web intrusion detection problem that the system targets: its
@@ -229,7 +233,7 @@ reviewed, contrasting them along the criteria of dataset, method, approach,
 and main limitation. Several important commonalities emerge from this
 table.
 
-\begin{table}[ht]
+\begin{table}[H]
   \centering
   \caption{Summary of related work on web attack detection over CSIC 2010.}
   \label{tab:related}
@@ -731,27 +735,21 @@ the evaluation charts in the subsequent chapters.
 \section{Chapter Summary}
 \label{sec:ch2summary}
 
-This chapter has established the full foundation for moving on to the
-design and implementation of the system. Section~\ref{sec:scope} delimited
-the problem: detecting application-layer web attacks from Apache logs, with
-a concrete catalogue of in-scope attack classes and a set of deliberately
-excluded limitations. Section~\ref{sec:related} surveyed and critically
-analysed a range of representative studies on the CSIC 2010 dataset,
-showing that most research pursues a single approach and rarely combines
-signature-based detection with machine learning; this gap is precisely the
-motivation for the three-tier hybrid architecture of the thesis.
-Sections~\ref{sec:ids} through~\ref{sec:features} presented the
-foundational knowledge tightly bound to the system: the notion of an IDS
-and its two detection paradigms, web attack types according to OWASP, the
-regular-expression-based signature technique together with its
-anti-evasion decoding mechanism, supervised learning algorithms (Random
-Forest, Logistic Regression) and unsupervised one-class learning algorithms
-(LOF, Isolation Forest, One-Class SVM), as well as the shared $22$-feature
-extraction and the evaluation metrics centred on the F2 score. On the basis
-of this knowledge and analysis, the next chapter will present the detailed
-design of the three-tier architecture together with the smart consensus
-decision mechanism, turning the theoretical principles laid out here into a
-complete detection system.
+This chapter has established the foundation for the design that follows.
+Section~\ref{sec:scope} delimited the problem---detecting application-layer
+web attacks from Apache logs---with a catalogue of in-scope attack classes and
+the excluded limitations. Section~\ref{sec:related} surveyed representative
+studies on CSIC 2010 and showed that most pursue a single approach and rarely
+combine signature-based detection with machine learning; this gap motivates
+the three-tier hybrid architecture of the thesis.
+Sections~\ref{sec:ids} through~\ref{sec:features} then presented the
+supporting knowledge: the notion of an IDS and its two paradigms, OWASP web
+attack types, the signature technique with its anti-evasion decoding, the
+supervised (Random Forest, Logistic Regression) and unsupervised one-class
+(LOF, Isolation Forest, One-Class SVM) algorithms, and the shared
+$22$-feature extraction with F2-centred metrics. The next chapter builds on
+this to present the detailed three-tier design and the smart consensus
+decision mechanism.
 
 % =====================================================================
 % BIBLIOGRAPHY

@@ -5,6 +5,10 @@
 \begin{document}
 
 
+\emergencystretch=3em
+\renewcommand{\_}{\textunderscore\allowbreak}
+\raggedbottom
+
 While Chapter 2 established the problem context and the
 theoretical building blocks, this chapter describes the proposed solution
 in detail. Section~\ref{sec:overview} gives a bird's-eye view of the entire
@@ -64,8 +68,7 @@ which correspond directly to the boxes in the diagram:
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.75\textwidth]{Figure/flow.png}
-  \caption{End-to-end processing flow of the proposed three-tier hybrid web intrusion
-detection system.}
+  \caption{End-to-end processing flow of the three-tier system.}
   \label{fig:pipeline}
 \end{figure}
 
@@ -143,12 +146,9 @@ semantic-and-contextual---which are summarised in Table~\ref{tab:features} and
 then described feature by feature below; the corresponding source code is shown
 in Figure~\ref{fig:code-features}.
 
-\begin{table}[ht]
+\begin{table}[H]
   \centering
-  \caption{The complete $22$-feature vector shared by the two machine-learning
-    tiers, grouped as in the text. ``int'' denotes an integer-valued feature;
-    \texttt{suspicious\_ua\_score}, \texttt{referer\_suspicion} and
-    \texttt{status\_code\_indicator} take a small set of discrete levels.}
+  \caption{The complete 22-feature vector, grouped as in the text.}
   \label{tab:features}
   \renewcommand{\arraystretch}{1.2}
   \setlength{\tabcolsep}{4pt}
@@ -313,10 +313,9 @@ expression (or, for the two stateful rules, as a small procedure). The nine
 rules are summarised in Table~\ref{tab:rules}; their exact definitions in the
 source code are shown in Figure~\ref{fig:code-regex}.
 
-\begin{table}[ht]
+\begin{table}[H]
   \centering
-  \caption{The nine Tier~1 detection rules, their matching mechanism, and the
-           attack class each targets.}
+  \caption{The nine Tier~1 detection rules.}
   \label{tab:rules}
   \renewcommand{\arraystretch}{1.3}
   \setlength{\tabcolsep}{5pt}
@@ -769,16 +768,14 @@ corresponding view on the dashboard.
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{Figure/real_time.png}
-  \caption{Real-time monitoring console raising an alert the moment an attack
-           is detected.}
+  \caption{Real-time monitoring console raising an alert.}
   \label{fig:alert-monitor}
 \end{figure}
 
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{Figure/dashboard.png}
-  \caption{Real-time monitoring dashboard summarising the live alert feed and
-           key performance indicators.}
+  \caption{Real-time monitoring dashboard.}
   \label{fig:dashboard}
 \end{figure}
 

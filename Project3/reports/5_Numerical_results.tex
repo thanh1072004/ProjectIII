@@ -4,6 +4,10 @@
 \setlist[romanlist]{label=(\roman*), leftmargin=2.2em, itemsep=2pt}
 \begin{document}
 
+\emergencystretch=3em
+\renewcommand{\_}{\textunderscore\allowbreak}
+\raggedbottom
+
 Having described the proposed three-tier hybrid system in
 Chapter~3, this chapter evaluates it empirically. The aim
 is twofold: to quantify how well each individual tier performs, and to show
@@ -41,7 +45,7 @@ of false negatives ($FN$) is the number of attacks that are missed (the
 count the correct decisions, while the two off-diagonal cells count the two
 kinds of error.
 
-\begin{table}[ht]
+\begin{table}[H]
   \centering
   \caption{Layout of the binary confusion matrix used in this chapter.}
   \label{tab:cm}
@@ -128,7 +132,7 @@ attacks and $15{,}124$ are clean, giving an attack ratio of $47.43\%$.
 Because the two classes are close to balanced, both precision and recall are
 meaningful and neither is trivially inflated by class skew.
 
-\begin{table}[ht]
+\begin{table}[H]
   \centering
   \caption{Composition of the primary evaluation set.}
   \label{tab:evalset}
@@ -168,10 +172,9 @@ detailed in Table~\ref{tab:sources}: the two CSIC subsets supply realistic
 e-commerce traffic, while the synthetic generator adds modern attack classes
 and a controlled variety of benign endpoints.
 
-\begin{table}[ht]
+\begin{table}[H]
   \centering
-  \caption{Composition of the raw corpus before balancing (the
-    $111{,}065$-line pool assembled by the build script).}
+  \caption{Composition of the raw corpus before balancing.}
   \label{tab:sources}
   \renewcommand{\arraystretch}{1.25}
   \setlength{\tabcolsep}{8pt}
@@ -286,7 +289,7 @@ preceded by a standardisation step, whereas the tree-based models are not.
 Every estimator is given a fixed random seed, which makes training and
 inference deterministic.
 
-\begin{table}[ht]
+\begin{table}[H]
   \centering
   \caption{Algorithm hyperparameters used in the experiments.}
   \label{tab:hyper}
@@ -342,10 +345,9 @@ models (Tier~2), and the three one-class models (Tier~3).
 Figure~\ref{fig:metrics} visualises the same data as four grouped bar charts,
 and Figure~\ref{fig:f1rank} ranks the models by F1 score.
 
-\begin{table}[ht]
+\begin{table}[H]
   \centering
-  \caption{Performance of the individual detectors on the evaluation set
-           (all values in \%).}
+  \caption{Performance of the individual detectors (\%).}
   \label{tab:individual}
   \renewcommand{\arraystretch}{1.35}
   \setlength{\tabcolsep}{9pt}
@@ -370,22 +372,17 @@ and Figure~\ref{fig:f1rank} ranks the models by F1 score.
   \end{tabular}
 \end{table}
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{Figure/comprehensive_metrics.png}
-  \caption{Precision, recall, F1, and F2 of every model, shown as four
-           grouped bar charts. Green bars are supervised models, blue bars
-           are unsupervised models, and red bars are the hybrid
-           configurations (discussed in Section~\ref{sec:res-hybrid}).}
+  \caption{Precision, recall, F1 and F2 of every model.}
   \label{fig:metrics}
 \end{figure}
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
   \includegraphics[width=0.85\textwidth]{Figure/f1_ranking.png}
-  \caption{Ranking of the detectors by F1 score. The Random Forest leads,
-           closely followed by the smart consensus and the Local Outlier
-           Factor.}
+  \caption{Ranking of the detectors by F1 score.}
   \label{fig:f1rank}
 \end{figure}
 
@@ -436,21 +433,16 @@ serves two purposes: it answers the practical question of which signals matter
 most, and it provides empirical evidence that the hand-crafted feature set of
 Chapter~3 was designed for good reason.
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
   \includegraphics[width=0.92\textwidth]{Figure/feature_importance.png}
-  \caption{Gini importance of the $22$ features in the Random Forest (Tier~2),
-           ranked from highest to lowest. Bars are coloured by magnitude:
-           dominant ($\geq 10\%$), supporting ($1$--$10\%$), and marginal
-           ($< 1\%$).}
+  \caption{Random Forest feature importance (Gini), ranked high to low.}
   \label{fig:featimp}
 \end{figure}
 
-\begin{table}[ht]
+\begin{table}[H]
   \centering
-  \caption{Leading Random Forest features by Gini importance, with cumulative
-           share. The remaining fourteen features together account for the
-           final $15.2\%$.}
+  \caption{Leading Random Forest features by Gini importance.}
   \label{tab:featimp}
   \renewcommand{\arraystretch}{1.25}
   \setlength{\tabcolsep}{8pt}
@@ -551,10 +543,9 @@ Figure~\ref{fig:pr} shows the precision--recall trade-off as a scatter plot,
 and Figure~\ref{fig:radar} overlays the three strongest configurations on a
 radar chart.
 
-\begin{table}[ht]
+\begin{table}[H]
   \centering
-  \caption{Tiers versus hybrid fusion strategies on the evaluation set
-           (all values in \%). The best value in each column is in bold.}
+  \caption{Tiers versus hybrid fusion strategies (\%).}
   \label{tab:hybrid}
   \renewcommand{\arraystretch}{1.35}
   \setlength{\tabcolsep}{9pt}
@@ -577,32 +568,24 @@ radar chart.
   \end{tabular}
 \end{table}
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{Figure/model_comparison.png}
-  \caption{Tier and hybrid configuration comparison across the four metrics.
-           The dashed line marks the $90\%$ reference level. Both fusion
-           strategies exceed every single tier on recall and F2.}
+  \caption{Tier and hybrid comparison across the four metrics.}
   \label{fig:tierhybrid}
 \end{figure}
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
   \includegraphics[width=0.75\textwidth]{Figure/precision_vs_recall.png}
-  \caption{Precision--recall trade-off. The ideal corner is the top-right.
-           The hybrid configurations sit in the high-recall, high-precision
-           region, while the Isolation Forest and One-Class SVM occupy the
-           high-recall but low-precision region.}
+  \caption{Precision--recall trade-off.}
   \label{fig:pr}
 \end{figure}
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
   \includegraphics[width=0.7\textwidth]{Figure/radar_comparison.png}
-  \caption{Multi-metric radar comparison of the three strongest
-           configurations: the Random Forest, the Local Outlier Factor, and
-           the smart consensus. The smart consensus dominates on the
-           recall and F2 axes.}
+  \caption{Radar comparison of the three strongest configurations.}
   \label{fig:radar}
 \end{figure}
 
@@ -687,15 +670,10 @@ reports, for one configuration, the four counts $TN$, $FP$, $FN$, and $TP$;
 the off-diagonal cells are the errors, with the bottom-left cell ($FN$) being
 the missed attacks and the top-right cell ($FP$) being the false alarms.
 
-\begin{figure}[ht]
+\begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth]{Figure/confusion_matrices.png}
-  \caption{Confusion matrices of the eight configurations on the same
-           $28{,}767$-line evaluation set. For each panel the bottom-left
-           cell counts missed attacks ($FN$) and the top-right cell counts
-           false alarms ($FP$); the two diagonal cells are correct decisions.
-           The per-panel F1 and F2 values match Tables~\ref{tab:individual}
-           and~\ref{tab:hybrid}.}
+  \caption{Confusion matrices of the eight configurations.}
   \label{fig:confusion}
 \end{figure}
 
@@ -740,10 +718,9 @@ of the best supervised model (Random Forest) and the best unsupervised model
 (Local Outlier Factor), together with the F1 and F2 of the proposed smart
 consensus.
 
-\begin{table}[ht]
+\begin{table}[H]
   \centering
-  \caption{The three-tier system trained and tested on each dataset under the
-           same protocol (all values in \%).}
+  \caption{Cross-dataset results of the three-tier system (\%).}
   \label{tab:crossdataset}
   \renewcommand{\arraystretch}{1.35}
   \setlength{\tabcolsep}{8pt}

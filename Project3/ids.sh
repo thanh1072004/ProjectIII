@@ -44,8 +44,15 @@ check_env() {
     [ -x "$VENV_STREAMLIT" ] || die "Chưa có .venv/bin/streamlit. Chạy ./setup.sh trước."
     [ -f "$PROJECT_DIR/apache_log.py" ] || die "Không tìm thấy apache_log.py"
     [ -f "$PROJECT_DIR/dashboard.py" ]  || die "Không tìm thấy dashboard.py"
-    [ -f "$PROJECT_DIR/sup_model_rf.pkl" ] || warn "sup_model_rf.pkl chưa có — Tier 2 sẽ bị disable"
-    [ -f "$PROJECT_DIR/ad_model_${MODEL}.pkl" ] || die "ad_model_${MODEL}.pkl chưa có. Chạy ./setup.sh trước hoặc đổi IDS_MODEL."
+    # Hệ thống dùng *_final.pkl trong trained_models/. Map model_type -> tên file:
+    case "$MODEL" in
+        lof)   UNSUP_PKL="lof_final.pkl" ;;
+        if)    UNSUP_PKL="isolation_forest_final.pkl" ;;
+        ocsvm) UNSUP_PKL="ocsvm_final.pkl" ;;
+        *)     UNSUP_PKL="${MODEL}_final.pkl" ;;
+    esac
+    [ -f "$PROJECT_DIR/trained_models/rf_final.pkl" ] || warn "trained_models/rf_final.pkl chưa có — Tier 2 sẽ bị disable"
+    [ -f "$PROJECT_DIR/trained_models/$UNSUP_PKL" ] || die "trained_models/$UNSUP_PKL chưa có. Chạy ./setup.sh trước hoặc đổi IDS_MODEL."
 }
 
 session_running() {
@@ -140,9 +147,9 @@ cmd_status() {
     if [ -r "$LOG_FILE" ]; then printf "${GREEN}(readable)${NC}\n"; else printf "${RED}(unreadable)${NC}\n"; fi
     printf "  Dashboard port : %s " "$PORT"
     if port_in_use; then printf "${GREEN}(listening)${NC}\n"; else printf "${YELLOW}(idle)${NC}\n"; fi
-    printf "  Alerts file    : monitor_alerts.jsonl "
-    if [ -f "$PROJECT_DIR/monitor_alerts.jsonl" ]; then
-        N=$(wc -l < "$PROJECT_DIR/monitor_alerts.jsonl" 2>/dev/null || echo 0)
+    printf "  Alerts file    : runtime/monitor_alerts.jsonl "
+    if [ -f "$PROJECT_DIR/runtime/monitor_alerts.jsonl" ]; then
+        N=$(wc -l < "$PROJECT_DIR/runtime/monitor_alerts.jsonl" 2>/dev/null || echo 0)
         printf "${GREEN}(%d alerts)${NC}\n" "$N"
     else
         printf "${YELLOW}(not created yet)${NC}\n"
@@ -167,7 +174,7 @@ cmd_attach() {
 }
 
 cmd_logs() {
-    F="$PROJECT_DIR/monitor_alerts.jsonl"
+    F="$PROJECT_DIR/runtime/monitor_alerts.jsonl"
     [ -f "$F" ] || die "Chưa có $F. Chạy './ids.sh start' trước."
     say "Đang tail $F (Ctrl+C để thoát)..."
     exec tail -F "$F"
@@ -185,7 +192,7 @@ Commands:
   restart   stop + start
   status    Hiển thị trạng thái + thông tin
   attach    Vào xem live 2 pane (Ctrl+B D để rời, vẫn chạy nền)
-  logs      Tail file monitor_alerts.jsonl
+  logs      Tail file runtime/monitor_alerts.jsonl
   help      In hướng dẫn này
 
 Environment:

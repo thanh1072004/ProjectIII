@@ -99,7 +99,9 @@ ok "Đã cài: $(pip list --format=columns 2>/dev/null | awk 'NR>2 {print $1}' |
 # ---------- 5. models ----------
 say "[5/6] Kiểm tra trained models trong trained_models/..."
 mkdir -p trained_models
-NEED_MODELS=("ad_model_lof.pkl" "ad_scaler_lof.pkl" "ad_vocab_lof.pkl" "sup_model_rf.pkl" "sup_vocab_rf.pkl")
+# Hệ thống dùng *_final.pkl (sinh bởi scripts/retrain_final_all_models.py).
+# Tối thiểu cho monitor (RF + LOF): rf_final + lof_final + scaler_final.
+NEED_MODELS=("rf_final.pkl" "lof_final.pkl" "scaler_final.pkl")
 MISSING=()
 for f in "${NEED_MODELS[@]}"; do
     [ -f "trained_models/$f" ] || MISSING+=("$f")
@@ -112,10 +114,9 @@ elif [ -f "ids_models_for_vm.zip" ]; then
     # Sau khi giải nén, nếu .pkl rơi ra root thì move vào trained_models/.
     unzip -o -q ids_models_for_vm.zip
     # shellcheck disable=SC2046
-    if ls ./ad_*.pkl ./sup_*.pkl >/dev/null 2>&1; then
+    if ls ./*_final.pkl >/dev/null 2>&1; then
         say "  Phát hiện .pkl ở root — đang dồn vào trained_models/..."
-        mv -f ad_*.pkl trained_models/ 2>/dev/null || true
-        mv -f sup_*.pkl trained_models/ 2>/dev/null || true
+        mv -f ./*_final.pkl trained_models/ 2>/dev/null || true
     fi
     ok "Đã giải nén models"
 else
@@ -124,7 +125,7 @@ else
     err "          cd Project3 && zip -r ids_models_for_vm.zip trained_models/"
     err "          rồi scp ids_models_for_vm.zip user@<VM>:~/Project3/"
     err "          rồi chạy lại ./setup.sh"
-    err "  Cách 2: tự train: python apache_log.py train datasets/combined_train_clean.log lof"
+    err "  Cách 2: tự train tất cả model: python3 scripts/retrain_final_all_models.py"
     exit 1
 fi
 
