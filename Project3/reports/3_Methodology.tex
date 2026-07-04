@@ -191,7 +191,7 @@ in Figure~\ref{fig:code-features}.
   \end{tabular}
 \end{table}
 
-\paragraph{Structural group (nine features).} This group captures the coarse
+\textbf{Structural group (nine features).} This group captures the coarse
 size and shape of the request. It comprises the total URL length
 (\texttt{len\_url}), counted over the concatenated path and query; the path
 depth (\texttt{path\_depth}), the number of ``\texttt{/}'' separators in the
@@ -219,7 +219,7 @@ compact, signature-independent signal of obfuscation. Taken together, an
 over-long URL, a high risky-character density, or an abnormally high entropy
 are all hallmarks of an injection or buffer-overflow attempt.
 
-\paragraph{Randomness-and-encoding group (five features).} This group
+\textbf{Randomness-and-encoding group (five features).} This group
 quantifies obfuscation and the multi-layer encoding evasion discussed in
 Chapter 2. It contains the maximum Shannon entropy taken over all individual
 parameter values param\_value\_max\_entropy, which isolates a
@@ -236,7 +236,7 @@ parameter names drawn from a curated suspicious set such as \texttt{cmd},
 \texttt{exec}, \texttt{file}, or \texttt{passwd}
 (\texttt{param\_names\_anomaly}).
 
-\paragraph{Semantic-and-contextual group (eight features).} This group
+\textbf{Semantic-and-contextual group (eight features).} This group
 encodes domain knowledge about how attacks differ from legitimate traffic. It
 comprises the suspicious-User-Agent score (\texttt{suspicious\_ua\_score}), a
 value in $[0,1]$ that is maximal for a known scanner string (\texttt{sqlmap},
