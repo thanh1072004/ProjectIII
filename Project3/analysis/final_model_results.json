@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-06-08T21:46:56.660317",
+  "timestamp": "2026-07-04T22:48:09.043467",
   "dataset": "final_comprehensive",
   "data_sources": {
     "synthetic_attack": 25000,
@@ -22,40 +22,40 @@
   "supervised": [
     {
       "model": "RandomForest",
-      "precision": 94.8,
-      "recall": 94.76,
-      "f1": 94.78,
-      "f2": 94.77
+      "precision": 95.1,
+      "recall": 94.38,
+      "f1": 94.74,
+      "f2": 94.52
     },
     {
       "model": "LogisticRegression",
-      "precision": 85.82,
-      "recall": 74.9,
-      "f1": 79.99,
-      "f2": 76.86
+      "precision": 85.37,
+      "recall": 73.52,
+      "f1": 79.01,
+      "f2": 75.62
     }
   ],
   "unsupervised": [
     {
       "model": "Isolation Forest",
-      "precision": 63.02,
-      "recall": 93.14,
-      "f1": 75.17,
-      "f2": 85.01
+      "precision": 63.92,
+      "recall": 95.17,
+      "f1": 76.48,
+      "f2": 86.69
     },
     {
       "model": "One-Class SVM",
-      "precision": 62.27,
-      "recall": 91.38,
-      "f1": 74.07,
-      "f2": 83.57
+      "precision": 63.07,
+      "recall": 92.27,
+      "f1": 74.93,
+      "f2": 84.45
     },
     {
       "model": "Local Outlier Factor",
-      "precision": 88.28,
-      "recall": 95.13,
-      "f1": 91.57,
-      "f2": 93.67
+      "precision": 88.85,
+      "recall": 94.84,
+      "f1": 91.75,
+      "f2": 93.58
     }
   ]
 }

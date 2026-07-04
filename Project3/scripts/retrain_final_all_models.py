@@ -32,19 +32,31 @@ sys.path.insert(0, PROJECT_ROOT)
 from ai_detector import LogAnomalyDetector
 
 def parse_log_line(line):
-    """Parse Apache log line"""
+    """Parse Apache log line — dùng CÙNG logic tách request như
+    apache_log.parse_log_entry (method = token đầu, protocol = token cuối bị bỏ)
+    để feature lúc train KHỚP với monitor (không còn dính 'HTTP/1.1' trong path)."""
     try:
-        pattern = r'(\S+) - - \[([^\]]+)\] "(\S+)\s+([^"]+)(?:\s+HTTP[^"]*)?"\s+(\d+)\s+(\S+)\s+"([^"]*)"\s+"([^"]*)"'
-        match = re.match(pattern, line)
+        match = re.match(
+            r'(\S+) - - \[([^\]]+)\] "([^"]*)"\s+(\d+)\s+(\S+)\s+"([^"]*)"\s+"([^"]*)"',
+            line)
         if not match:
             return None
 
-        ip, timestamp, method, url, status, size, referer, ua = match.groups()
+        ip, timestamp, request, status, size, referer, ua = match.groups()
+
+        parts = request.split()
+        method = parts[0] if parts else ""
+        if len(parts) >= 3:
+            raw_url = " ".join(parts[1:-1])   # bỏ token protocol cuối (giống parse_log_entry)
+        elif len(parts) == 2:
+            raw_url = parts[1]
+        else:
+            raw_url = ""
 
         try:
-            decoded_url = unquote(url)
+            decoded_url = unquote(raw_url)
         except:
-            decoded_url = url
+            decoded_url = raw_url
 
         parsed_url = urlparse(decoded_url)
         path = parsed_url.path or "/"

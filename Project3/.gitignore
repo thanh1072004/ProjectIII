@@ -29,6 +29,9 @@ analysis/charts/*.json
 datasets/*.log
 !datasets/test_monitor.log
 
+# Backup log gốc (double HTTP/1.1) khi dọn dataset — chỉ giữ local, KHÔNG push
+datasets/_backup_double_http/
+
 # Helper file giữ thư mục datasets/ và trained_models/ trong git
 !datasets/.gitkeep
 !trained_models/.gitkeep

@@ -16,6 +16,7 @@ Logic:
 import csv
 import random
 import os
+import re
 import sys
 import io
 import urllib.parse
@@ -63,6 +64,11 @@ def convert_csic_full(csv_file_path, output_log_path):
                     # Remove localhost from URL
                     if "http://localhost:8080" in url:
                         url = url.replace("http://localhost:8080", "")
+
+                    # CSIC lưu cả protocol trong trường URL (vd ".../index.jsp HTTP/1.1").
+                    # Cắt bỏ để không bị LẶP HTTP/1.1 khi ghi dòng log Apache (dòng 95).
+                    # Phải cắt TRƯỚC bước POST_BODY để POST_BODY được nối vào đúng chỗ.
+                    url = re.sub(r'\s+HTTP/\d+\.\d+\s*$', '', url).strip()
 
                     # *** CRITICAL: Add POST_BODY to URL if POST + content exists ***
                     if method == 'POST' and content:
