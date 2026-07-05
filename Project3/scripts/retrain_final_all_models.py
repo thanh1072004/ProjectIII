@@ -47,7 +47,7 @@ def parse_log_line(line):
         parts = request.split()
         method = parts[0] if parts else ""
         if len(parts) >= 3:
-            raw_url = " ".join(parts[1:-1])   # bỏ token protocol cuối (giống parse_log_entry)
+            raw_url = " ".join(parts[1:-1])
         elif len(parts) == 2:
             raw_url = parts[1]
         else:
@@ -148,13 +148,14 @@ def main():
 
     from sklearn.ensemble import RandomForestClassifier
     from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import StandardScaler
     from sklearn.metrics import precision_score, recall_score, f1_score, fbeta_score
 
     results_sup = []
 
     # RandomForest
     print("Training RandomForest...")
-    rf_model = RandomForestClassifier(n_estimators=200, max_depth=20, random_state=42, n_jobs=-1)
+    rf_model = RandomForestClassifier(n_estimators=200, max_depth=None, class_weight="balanced", random_state=42, n_jobs=-1)
     rf_model.fit(X_train, y_train)
     y_pred_rf = rf_model.predict(X_eval)
     prec_rf = precision_score(y_eval, y_pred_rf, zero_division=0)
@@ -171,10 +172,13 @@ def main():
     print(f"  Precision={prec_rf*100:.2f}% | Recall={rec_rf*100:.2f}% | F1={f1_rf*100:.2f}%")
 
     # LogisticRegression
-    print("Training LogisticRegression...")
-    lr_model = LogisticRegression(max_iter=1000, random_state=42, n_jobs=-1)
-    lr_model.fit(X_train, y_train)
-    y_pred_lr = lr_model.predict(X_eval)
+    print("Training LogisticRegression (scaled)...")
+    lr_scaler = StandardScaler()
+    X_train_lr = lr_scaler.fit_transform(X_train)
+    X_eval_lr = lr_scaler.transform(X_eval)
+    lr_model = LogisticRegression(max_iter=2000, class_weight="balanced", solver="lbfgs", random_state=42)
+    lr_model.fit(X_train_lr, y_train)
+    y_pred_lr = lr_model.predict(X_eval_lr)
     prec_lr = precision_score(y_eval, y_pred_lr, zero_division=0)
     rec_lr = recall_score(y_eval, y_pred_lr, zero_division=0)
     f1_lr = f1_score(y_eval, y_pred_lr, zero_division=0)
@@ -197,17 +201,15 @@ def main():
     from sklearn.neighbors import LocalOutlierFactor
     from sklearn.preprocessing import StandardScaler
 
-    # Calculate expected attack rate in eval
     attack_rate = (y_eval == 1).sum() / len(y_eval)
-    contamination = min(attack_rate + 0.02, 0.50)
-    print(f"Eval set attack rate: {attack_rate*100:.2f}%")
-    print(f"Setting contamination: {contamination*100:.2f}%\n")
+    print(f"Eval set attack rate: {attack_rate*100:.2f}% (chỉ tham khảo)")
+    print("Contamination=0.50 (IF, LOF) | nu=0.60 (OCSVM) theo báo cáo\n")
 
     results_unsup = []
 
     # Isolation Forest
     print("Training Isolation Forest (on clean data)...")
-    if_model = IsolationForest(contamination=contamination, random_state=42)
+    if_model = IsolationForest(n_estimators=200, contamination=0.50, random_state=42, n_jobs=-1)
     if_model.fit(X_train_clean)
     y_pred_if = (if_model.predict(X_eval) == -1).astype(int)
     prec_if = precision_score(y_eval, y_pred_if, zero_division=0)
@@ -228,7 +230,7 @@ def main():
     scaler = StandardScaler()
     X_train_clean_scaled = scaler.fit_transform(X_train_clean)
     X_eval_scaled = scaler.transform(X_eval)
-    ocsvm_model = OneClassSVM(nu=contamination, kernel='rbf')
+    ocsvm_model = OneClassSVM(nu=0.60, kernel='rbf', gamma='scale')
     ocsvm_model.fit(X_train_clean_scaled)
     y_pred_ocsvm = (ocsvm_model.predict(X_eval_scaled) == -1).astype(int)
     prec_ocsvm = precision_score(y_eval, y_pred_ocsvm, zero_division=0)
@@ -246,7 +248,7 @@ def main():
 
     # Local Outlier Factor
     print("Training Local Outlier Factor (on clean data)...")
-    lof_model = LocalOutlierFactor(n_neighbors=20, contamination=contamination, novelty=True)
+    lof_model = LocalOutlierFactor(n_neighbors=20, contamination=0.50, novelty=True)
     lof_model.fit(X_train_clean_scaled)
     y_pred_lof = (lof_model.predict(X_eval_scaled) == -1).astype(int)
     prec_lof = precision_score(y_eval, y_pred_lof, zero_division=0)
@@ -268,7 +270,8 @@ def main():
 
     joblib.dump(rf_model, os.path.join(models_dir, "rf_final.pkl"))
     joblib.dump(lr_model, os.path.join(models_dir, "lr_final.pkl"))
-    print("✓ Saved supervised models (RF, LR)")
+    joblib.dump(lr_scaler, os.path.join(models_dir, "lr_scaler_final.pkl"))  # LR dùng scaler riêng (fit trên X_train đầy đủ)
+    print("✓ Saved supervised models (RF, LR + lr_scaler)")
 
     joblib.dump(if_model, os.path.join(models_dir, "isolation_forest_final.pkl"))
     joblib.dump(ocsvm_model, os.path.join(models_dir, "ocsvm_final.pkl"))
