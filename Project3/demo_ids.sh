@@ -32,8 +32,7 @@ req() {  # $1=mô_tả  $2..=curl args
     sleep "$DELAY"
 }
 
-echo -e "${CYAN}🚀 DEMO IDS: bắn 10 traffic TẤN CÔNG vào $BASE${NC}"
-echo -e "${CYAN}   (xem 10 alert ở terminal đang chạy monitor trên access.log)${NC}\n"
+echo -e "${CYAN}🚀 DEMO IDS: 10 traffic attacks to $BASE${NC}"
 
 req "${RED}1. SQL Injection${NC}"                -A "$B" "$BASE/login.php?user=admin'%20OR%20'1'%3D'1"
 req "${RED}2. Cross-Site Scripting (XSS)${NC}"   -A "$B" "$BASE/search.php?q=%3Cscript%3Ealert(1)%3C/script%3E"
@@ -46,4 +45,4 @@ req "${RED}8. Sensitive File Access (.env)${NC}" -A "$B" "$BASE/.env"
 req "${RED}9. Scanner tự động (Nikto UA)${NC}"   -A "Nikto/2.1.6" "$BASE/admin.php"
 req "${RED}10. SQL Injection (UNION SELECT)${NC}" -A "$B" "$BASE/list.php?id=1%20UNION%20SELECT%20pass%20FROM%20users"
 
-echo -e "\n${CYAN}✅ ĐÃ BẮN XONG 10 tấn công. Terminal monitor phải hiện 10 alert (CRITICAL).${NC}"
+echo -e "${CYAN}✅ DONE: 10 traffics attack to $BASE${NC}"

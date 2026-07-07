@@ -27,7 +27,7 @@ req() {  # $1=METHOD  $2=query
     sleep "$DELAY"
 }
 
-echo -e "${CYAN}🟢 Gửi 10 traffic SẠCH (5 GET + 5 POST) — kỳ vọng: monitor không báo cái nào...${NC}\n"
+echo -e "${CYAN}🟢 DEMO IDS: 10 traffic clean to $BASE${NC}\n"
 
 req GET  "page=1&limit=10"
 req GET  "page=12&limit=10"
@@ -40,4 +40,4 @@ req POST "POST_BODY=user_id=860&action=save"
 req POST "POST_BODY=user_id=412&action=save"
 req POST "POST_BODY=user_id=123&action=view"
 
-echo -e "\n${CYAN}✅ Xong. Terminal monitor PHẢI im lặng (0 alert) cho 10 dòng này.${NC}"
+echo -e "\n${CYAN}✅ DONE: 10 traffic clean to $BASE${NC}"

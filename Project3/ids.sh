@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
 # ============================================================================
-# IDS launcher — quản lý monitor + dashboard trong một tmux session.
+# IDS launcher — manages the monitor + dashboard in a single tmux session.
 #
 # Subcommands:
-#   ./ids.sh start    Khởi động monitor (pane trái) + dashboard (pane phải)
-#   ./ids.sh stop     Dừng cả 2 (kill tmux session)
+#   ./ids.sh start    Start monitor (left pane) + dashboard (right pane)
+#   ./ids.sh stop     Stop both (kill the tmux session)
 #   ./ids.sh restart  stop + start
-#   ./ids.sh status   Hiển thị trạng thái + URL dashboard
-#   ./ids.sh attach   Vào tmux session để xem live (Ctrl+B sau đó D để thoát)
-#   ./ids.sh logs     Tail file alerts JSONL (monitor_alerts.jsonl)
+#   ./ids.sh status   Show status + dashboard URL
+#   ./ids.sh attach   Attach to the tmux session to watch live (Ctrl+B then D to leave)
+#   ./ids.sh logs     Tail the alerts JSONL file (monitor_alerts.jsonl)
 #
-# Biến môi trường:
-#   IDS_LOG_FILE  — Apache access log (mặc định /var/log/apache2/access.log)
-#   IDS_PORT      — Port của Streamlit dashboard (mặc định 8501)
-#   IDS_MODEL     — Tripwire unsupervised model (mặc định lof)
+# Environment variables:
+#   IDS_LOG_FILE  — Apache access log (default /var/log/apache2/access.log)
+#   IDS_PORT      — Streamlit dashboard port (default 8501)
+#   IDS_MODEL     — Unsupervised tripwire model (default lof)
 # ============================================================================
 
 set -e
@@ -39,20 +39,20 @@ die()  { err "$*"; exit 1; }
 
 # ---------- preflight ----------
 check_env() {
-    command -v tmux >/dev/null 2>&1 || die "Chưa cài tmux. Chạy ./setup.sh trước."
-    [ -x "$VENV_PY" ] || die "Chưa có .venv/bin/python. Chạy ./setup.sh trước."
-    [ -x "$VENV_STREAMLIT" ] || die "Chưa có .venv/bin/streamlit. Chạy ./setup.sh trước."
-    [ -f "$PROJECT_DIR/apache_log.py" ] || die "Không tìm thấy apache_log.py"
-    [ -f "$PROJECT_DIR/dashboard.py" ]  || die "Không tìm thấy dashboard.py"
-    # Hệ thống dùng *_final.pkl trong trained_models/. Map model_type -> tên file:
+    command -v tmux >/dev/null 2>&1 || die "tmux is not installed. Run ./setup.sh first."
+    [ -x "$VENV_PY" ] || die ".venv/bin/python is missing. Run ./setup.sh first."
+    [ -x "$VENV_STREAMLIT" ] || die ".venv/bin/streamlit is missing. Run ./setup.sh first."
+    [ -f "$PROJECT_DIR/apache_log.py" ] || die "apache_log.py not found"
+    [ -f "$PROJECT_DIR/dashboard.py" ]  || die "dashboard.py not found"
+    # The system uses *_final.pkl in trained_models/. Map model_type -> file name:
     case "$MODEL" in
         lof)   UNSUP_PKL="lof_final.pkl" ;;
         if)    UNSUP_PKL="isolation_forest_final.pkl" ;;
         ocsvm) UNSUP_PKL="ocsvm_final.pkl" ;;
         *)     UNSUP_PKL="${MODEL}_final.pkl" ;;
     esac
-    [ -f "$PROJECT_DIR/trained_models/rf_final.pkl" ] || warn "trained_models/rf_final.pkl chưa có — Tier 2 sẽ bị disable"
-    [ -f "$PROJECT_DIR/trained_models/$UNSUP_PKL" ] || die "trained_models/$UNSUP_PKL chưa có. Chạy ./setup.sh trước hoặc đổi IDS_MODEL."
+    [ -f "$PROJECT_DIR/trained_models/rf_final.pkl" ] || warn "trained_models/rf_final.pkl missing — Tier 2 will be disabled"
+    [ -f "$PROJECT_DIR/trained_models/$UNSUP_PKL" ] || die "trained_models/$UNSUP_PKL missing. Run ./setup.sh first or change IDS_MODEL."
 }
 
 session_running() {
@@ -73,28 +73,28 @@ port_in_use() {
 cmd_start() {
     check_env
     if session_running; then
-        warn "tmux session '$SESSION' đã chạy. Dùng './ids.sh attach' để xem, hoặc './ids.sh restart' để chạy lại."
+        warn "tmux session '$SESSION' is already running. Use './ids.sh attach' to view, or './ids.sh restart' to relaunch."
         exit 0
     fi
     if port_in_use; then
-        warn "Port $PORT đã có process khác lắng nghe. Đổi IDS_PORT hoặc kill process đó."
+        warn "Port $PORT is already in use by another process. Change IDS_PORT or kill that process."
     fi
     if [ ! -r "$LOG_FILE" ]; then
-        die "Không đọc được $LOG_FILE. Kiểm tra quyền (sudo usermod -a -G adm \$USER, rồi logout/login)."
+        die "Cannot read $LOG_FILE. Check permissions (sudo usermod -a -G adm \$USER, then log out/in)."
     fi
 
-    say "Khởi động tmux session '$SESSION'..."
+    say "Starting tmux session '$SESSION'..."
     say "  Apache log: $LOG_FILE"
     say "  Dashboard:  http://0.0.0.0:$PORT"
     say "  Tripwire:   $MODEL"
 
-    # Pane trái: monitor (tail -F → python apache_log.py monitor)
-    # tail -F để follow logrotate
+    # Left pane: monitor (tail -F → python apache_log.py monitor)
+    # tail -F to follow logrotate
     MONITOR_CMD="exec tail -F '$LOG_FILE' | '$VENV_PY' apache_log.py monitor /dev/null $MODEL"
     tmux new-session -d -s "$SESSION" -n "ids" \
         "echo '=== TIER 1+2+3 MONITOR ==='; $MONITOR_CMD"
 
-    # Pane phải: dashboard
+    # Right pane: dashboard
     DASH_CMD="exec '$VENV_STREAMLIT' run dashboard.py \
         --server.headless true \
         --server.address 0.0.0.0 \
@@ -107,26 +107,26 @@ cmd_start() {
 
     sleep 1
     if session_running; then
-        ok "Đã khởi động!"
+        ok "Started!"
         echo
-        say "Bước tiếp:"
-        echo "  ./ids.sh status   # xem trạng thái"
-        echo "  ./ids.sh attach   # vào xem 2 pane trực tiếp (Ctrl+B D để rời, vẫn chạy)"
-        echo "  ./ids.sh logs     # tail file alerts"
-        echo "  ./ids.sh stop     # dừng"
+        say "Next steps:"
+        echo "  ./ids.sh status   # show status"
+        echo "  ./ids.sh attach   # watch the 2 panes live (Ctrl+B D to detach, keeps running)"
+        echo "  ./ids.sh logs     # tail the alerts file"
+        echo "  ./ids.sh stop     # stop"
         echo
-        say "Dashboard: http://<VM-IP>:$PORT (nếu chạy local: http://localhost:$PORT)"
+        say "Dashboard: http://<VM-IP>:$PORT (if running locally: http://localhost:$PORT)"
     else
-        die "Không khởi động được. Chạy './ids.sh attach' để xem lỗi (nếu session tồn tại)."
+        die "Failed to start. Run './ids.sh attach' to see the error (if the session exists)."
     fi
 }
 
 cmd_stop() {
     if session_running; then
         tmux kill-session -t "$SESSION"
-        ok "Đã dừng tmux session '$SESSION'"
+        ok "Stopped tmux session '$SESSION'"
     else
-        warn "tmux session '$SESSION' không đang chạy"
+        warn "tmux session '$SESSION' is not running"
     fi
 }
 
@@ -164,36 +164,36 @@ cmd_status() {
 }
 
 cmd_attach() {
-    session_running || die "tmux session '$SESSION' chưa chạy. Chạy './ids.sh start' trước."
-    say "Đang attach vào session '$SESSION'..."
-    say "  Phím tắt: Ctrl+B D = rời session (vẫn chạy)"
-    say "           Ctrl+B mũi tên = chuyển pane"
-    say "           Ctrl+B [ = scroll mode (q để thoát)"
+    session_running || die "tmux session '$SESSION' is not running. Run './ids.sh start' first."
+    say "Attaching to session '$SESSION'..."
+    say "  Shortcuts: Ctrl+B D = detach session (keeps running)"
+    say "             Ctrl+B arrow = switch pane"
+    say "             Ctrl+B [ = scroll mode (q to exit)"
     sleep 1
     exec tmux attach-session -t "$SESSION"
 }
 
 cmd_logs() {
     F="$PROJECT_DIR/runtime/monitor_alerts.jsonl"
-    [ -f "$F" ] || die "Chưa có $F. Chạy './ids.sh start' trước."
-    say "Đang tail $F (Ctrl+C để thoát)..."
+    [ -f "$F" ] || die "$F does not exist yet. Run './ids.sh start' first."
+    say "Tailing $F (Ctrl+C to exit)..."
     exec tail -F "$F"
 }
 
 cmd_help() {
     cat <<EOF
-IDS Launcher — quản lý monitor + dashboard
+IDS Launcher — manages the monitor + dashboard
 
 Usage: ./ids.sh <command>
 
 Commands:
-  start     Khởi động monitor + dashboard trong tmux session 'ids'
-  stop      Dừng tmux session
+  start     Start monitor + dashboard in the tmux session 'ids'
+  stop      Stop the tmux session
   restart   stop + start
-  status    Hiển thị trạng thái + thông tin
-  attach    Vào xem live 2 pane (Ctrl+B D để rời, vẫn chạy nền)
-  logs      Tail file runtime/monitor_alerts.jsonl
-  help      In hướng dẫn này
+  status    Show status + info
+  attach    Watch the 2 panes live (Ctrl+B D to detach, keeps running in background)
+  logs      Tail runtime/monitor_alerts.jsonl
+  help      Print this help
 
 Environment:
   IDS_LOG_FILE  Apache access log (default: /var/log/apache2/access.log)
