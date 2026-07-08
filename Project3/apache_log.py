@@ -164,6 +164,15 @@ def check_param_tampering(path, query, vocab):
 
 # --- MAIN ANALYSIS ---
 
+def _json_safe(o):
+    """Chuyển numpy scalar (np.bool_, np.float64, np.int64, ...) về kiểu Python
+    thuần cho json.dumps. Model sklearn trả về numpy nên bool/float lọt vào dict
+    -> json.dumps mặc định ném TypeError. numpy scalar đều có .item()."""
+    if hasattr(o, "item"):
+        return o.item()
+    raise TypeError(f"Object of type {type(o).__name__} is not JSON serializable")
+
+
 def analyze_log(path_log, ai_engine, supervised_engine=None,
                 path_out_alerts=None,
                 path_out_results=None,
@@ -317,7 +326,7 @@ def analyze_log(path_log, ai_engine, supervised_engine=None,
                 "lof_hit":   bool(unsup_hit),
                 "whitelisted": whitelisted,
             }
-            f_results.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            f_results.write(json.dumps(rec, ensure_ascii=False, default=_json_safe) + "\n")
 
             # Ngoài ra: nếu là attack -> thêm vào alerts.jsonl (format cũ)
             if is_attack:
@@ -921,7 +930,7 @@ def monitor_realtime(ai_engine, supervised_engine=None, jsonl_path=None):
                 }
                 try:
                     with open(jsonl_path, "a", encoding="utf-8") as f:
-                        f.write(json.dumps(rec) + "\n")
+                        f.write(json.dumps(rec, default=_json_safe) + "\n")
                 except Exception:
                     pass  # never let dashboard logging break the monitor
 
@@ -1209,7 +1218,7 @@ def save_alerts(alerts, path_out_alerts):
     """
     with open(path_out_alerts, "w", encoding="utf-8") as f:
         for alert in alerts:
-            f.write(json.dumps(alert) + "\n")
+            f.write(json.dumps(alert, default=_json_safe) + "\n")
 
 
 if __name__ == "__main__":
