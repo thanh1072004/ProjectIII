@@ -8,8 +8,6 @@
 #
 #  CHẠY (sau khi đã mở monitor ở terminal khác):
 #      bash demo_clean.sh
-#  Mỗi dòng in mã HTTP: phải là 200. Nếu 404/403 -> '/' không trả 200 trên
-#  máy bạn, đổi BASE sang một trang chắc chắn tồn tại (trả 200).
 # =====================================================================
 
 BASE=${BASE:-http://localhost}
@@ -23,7 +21,7 @@ req() {  # $1=METHOD  $2=query
     else
         code=$(curl -s -o /dev/null -w "%{http_code}" -X "$1" -A "$B" "$BASE/?$2")
     fi
-    echo -e "${GREEN}  [sạch] $1 /?$2${NC}  ${CYAN}-> HTTP $code${NC}"
+    echo -e "${GREEN}  [Clean] $1 /?$2${NC}  ${CYAN}-> HTTP $code${NC}"
     sleep "$DELAY"
 }
 

